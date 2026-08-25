@@ -1,0 +1,19 @@
+{
+  "map": {
+    "src/adda/audit.py": "docs/modules/audit.md",
+    "src/adda/cli.py": "docs/modules/cli.md",
+    "src/adda/compress.py": "docs/modules/compress.md",
+    "src/adda/diff.py": "docs/modules/diff.md",
+    "src/adda/evaluate.py": "docs/modules/evaluate.md",
+    "src/adda/hook.py": "docs/modules/hook.md",
+    "src/adda/modulemap.py": "docs/modules/modulemap.md",
+    "src/adda/okf.py": "docs/modules/okf.md",
+    "src/adda/rehydrate.py": "docs/modules/rehydrate.md",
+    "src/adda/sentinel.py": "docs/modules/sentinel.md",
+    "src/adda/sync.py": "docs/modules/sync.md"
+  },
+  "exempt": [
+    "src/adda/__init__.py",
+    "src/adda/templates/**"
+  ]
+}

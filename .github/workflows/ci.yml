@@ -1,0 +1,86 @@
+# Developed by - Vedavyas Vayalpadu - vyas4c3@gmail.com
+# Coded by - Claude Code
+#
+# ENH-ADDA-011. `adda diff` and `adda audit` were built with exit-1 contracts
+# specifically so a machine could tell pass from fail (ENH-ADDA-007), and until
+# now nothing consumed them. The pre-commit hook is per-machine, untracked, and
+# fails open, so enforcement lapsed on every fresh clone.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is the declared floor (raised from 3.9 by BUG-ADDA-005, where
+        # `str | None` without deferred annotations raised at import). Testing
+        # the floor itself is what makes that declaration honest.
+        python-version: ["3.10", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # REQUIRED, not a preference. `adda audit` decides staleness by git
+          # commit ancestry, and on a shallow clone `merge-base --is-ancestor`
+          # can exit 1 because it ran out of history rather than because the
+          # answer is no. Full history is what makes the staleness rule
+          # decidable here. See docs/modules/audit.md.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Tests
+        run: python -m pytest -q
+
+      - name: Drift — documented modules vs the actual repo
+        run: adda diff .
+
+      - name: Doc drift — missing, stale, unmapped or orphaned module docs
+        run: adda audit .
+
+      # `adda eval` prints its numbers and exits 0 by design, so CI has to make
+      # the assertion itself. Overall fidelity is expected below 100% (dropping
+      # prose is the intended compression trade-off); load-bearing MUST be 100%
+      # — anything less means rehydrate lost a constraint, an active module, or
+      # an in-force ADR, which is a real bug rather than a number to record.
+      - name: Rehydration fidelity — load-bearing must stay 100%
+        run: |
+          adda eval . --json > eval.json
+          cat eval.json
+          python - <<'PY'
+          import json, sys
+          r = json.load(open("eval.json"))
+          lb = r["load_bearing_fidelity_pct"]
+          print(f"load-bearing: {lb}%  overall: {r['overall_fidelity_pct']}%")
+          if lb < 100.0:
+              sys.exit(f"FAIL: load-bearing fidelity {lb}% < 100% — rehydrate has lost critical architecture memory")
+          PY
+
+      # Only present in the private working repo. The published repo runs the
+      # same workflow file and simply skips this step, rather than needing a
+      # second workflow that could drift from this one.
+      - name: Export guard — the public tree must stage clean
+        run: |
+          if [ -f scripts/export_public.py ]; then
+            python scripts/export_public.py . "${RUNNER_TEMP}/adda-public"
+          else
+            echo "no export script in this repo - skipping (expected in the published copy)"
+          fi
