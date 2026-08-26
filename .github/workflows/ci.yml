@@ -110,8 +110,8 @@ jobs:
                  if (r.split("/")[0].startswith(".") and r not in allowed)
                  or (r.endswith(".md") and "/" not in r and r not in allowed)]
           if bad:
-              print("
-".join("  " + b for b in sorted(bad)))
+              for b in sorted(bad):
+                  print('  ' + b)
               sys.exit(f"FAIL: {len(bad)} file(s) in the sdist are not part of the package")
           print(f"sdist clean: {len(rels)} files")
           PY
