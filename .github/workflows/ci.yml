@@ -90,6 +90,32 @@ jobs:
               sys.exit(f"FAIL: load-bearing fidelity {lb}% < 100% — rehydrate has lost critical architecture memory")
           PY
 
+      # BUG-ADDA-023. hatchling's default sdist ships everything git tracks, so
+      # `python -m build` packed internal files that must never be published -
+      # one of them carrying a credential. pyproject now allowlists the sdist;
+      # this is the cheap proof that allowlist is right, the same way the export
+      # script proves its own. A publish is irreversible, so this fails closed.
+      - name: Package guard — the sdist must contain nothing internal
+        if: matrix.python-version == '3.13'
+        run: |
+          pip install build==1.4.2
+          python -m build --sdist --outdir "${RUNNER_TEMP}/sd" .
+          python - <<'PY'
+          import glob, os, sys, tarfile
+          names = tarfile.open(glob.glob(os.environ["RUNNER_TEMP"] + "/sd/*.tar.gz")[0]).getnames()
+          rels = [n.split("/", 1)[1] for n in names if "/" in n]
+          # Packaging metadata legitimately ships; nothing else hidden should.
+          allowed = {"README.md", "OKF_SCHEMA.md", ".gitignore", ".gitattributes"}
+          bad = [r for r in rels
+                 if (r.split("/")[0].startswith(".") and r not in allowed)
+                 or (r.endswith(".md") and "/" not in r and r not in allowed)]
+          if bad:
+              print("
+".join("  " + b for b in sorted(bad)))
+              sys.exit(f"FAIL: {len(bad)} file(s) in the sdist are not part of the package")
+          print(f"sdist clean: {len(rels)} files")
+          PY
+
       # Only present in the private working repo. The published repo runs the
       # same workflow file and simply skips this step, rather than needing a
       # second workflow that could drift from this one.

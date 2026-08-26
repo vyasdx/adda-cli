@@ -215,7 +215,7 @@ python benchmarks/run.py . ../flask ../requests ../fastapi ../django ../date-fns
 
 | repo | commit | modules | mapped | exempt | skipped | collisions | time | load-bearing | overall | payload cut |
 |---|---|---|---|---|---|---|---|---|---|---|
-| ADDA | `66164e4` | 1 | 11 | 1 | 0 | 0 | 0.01s | **100.0%** | 87.1% | 45.6% |
+| ADDA | `781b178` | 1 | 11 | 1 | 0 | 0 | 0.01s | **100.0%** | 87.5% | 44.3% |
 | flask | `d318b68` | 1 | 21 | 3 | 0 | 0 | 0.01s | n/a | n/a | n/a |
 | requests | `5460f46` | 1 | 18 | 1 | 0 | 0 | 0.01s | n/a | n/a | n/a |
 | fastapi | `9a8a13f` | 2 | 41 | 7 | 458 (`docs_src`) | 0 | 0.26s | n/a | n/a | n/a |
@@ -223,7 +223,10 @@ python benchmarks/run.py . ../flask ../requests ../fastapi ../django ../date-fns
 | date-fns | `a0a3922` | 2 | 1256 | 0 | 0 | 0 | 1.33s | n/a | n/a | n/a |
 
 Commit SHAs are recorded because otherwise the table is reproducible mechanically
-but not in time — running it next month benchmarks different code.
+but not in time — running it next month benchmarks different code. That applies
+to ADDA's own row too: its fidelity and payload figures move as its architecture
+memory grows, so they describe this repo at that commit rather than a fixed
+property of the tool.
 
 **Zero collisions across 2,066 mapped files.** That number is the point: a doc path
 that two code paths share is a module reported as documented while having no
