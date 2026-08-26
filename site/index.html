@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<!-- Developed by - Vedavyas Vayalpadu - vyas4c3@gmail.com -->
+<!-- Coded by - Claude Code -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADDA — Your code changed. Your docs should know.</title>
+<meta name="description" content="ADDA finds documentation that has quietly stopped being true, blocks the commit that introduces the drift, and reports what it could not determine. Git-native, deterministic, offline. MIT.">
+<meta property="og:title" content="ADDA — Your code changed. Your docs should know.">
+<meta property="og:description" content="Stale documentation no longer just misleads people. It becomes AI context.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ───────────────────────────────────────────────────────────────
+   Three colours. Each one means something.
+     green = current      red = stale      amber = cannot tell
+   Nothing here is decorative — that is the product's own argument,
+   applied to the page that describes it.
+   ─────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0b0e13; --panel:#11151c; --sunk:#080a0e;
+  --line:#232c37; --line-soft:#1a212a;
+  --fg:#e8eef5; --muted:#93a1b1; --dim:#5f6b7a;
+  --ok:#3fb950; --ok-bg:#0f2417;
+  --no:#f85149; --no-bg:#2a1416;
+  --huh:#d9a441; --huh-bg:#241b0d;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);
+     font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+.wrap{max-width:1000px;margin:0 auto;padding:0 28px}
+section{padding:88px 0;border-top:1px solid var(--line-soft)}
+h1,h2,h3{letter-spacing:-.03em;line-height:1.12}
+h1{font-size:clamp(1.9rem,4.6vw,3.1rem);font-weight:700}
+h2{font-size:clamp(1.5rem,3.4vw,2.2rem);font-weight:700}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--dim);margin-bottom:16px}
+.lead{color:var(--muted);margin-top:18px;max-width:640px}
+strong{font-weight:600;color:var(--fg)}
+code{font-family:var(--mono);font-size:.92em}
+
+nav{display:flex;justify-content:space-between;align-items:center;
+    padding:20px 0;font-family:var(--mono);font-size:13px}
+nav .b{letter-spacing:.3em;font-weight:600}
+nav a{color:var(--muted);text-decoration:none;margin-left:22px}
+nav a:hover{color:var(--fg)}
+
+header{padding:56px 0 20px}
+header h1{max-width:820px}
+header .lead{font-size:1.05rem}
+.run{font-family:var(--mono);font-size:13px;color:var(--dim);margin:30px 0 14px}
+.run i{color:var(--ok);font-style:normal}
+
+.diff{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);
+      border-radius:8px;overflow:hidden;font-family:var(--mono);font-size:13px;
+      background:var(--sunk)}
+@media(max-width:780px){.diff{grid-template-columns:1fr}}
+.pane:first-child{border-right:1px solid var(--line)}
+@media(max-width:780px){.pane:first-child{border-right:none;border-bottom:1px solid var(--line)}}
+.ph{display:flex;justify-content:space-between;gap:12px;padding:9px 14px;
+    background:var(--panel);border-bottom:1px solid var(--line);
+    font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden}
+.ph .stale{color:var(--no)} .ph .fresh{color:var(--ok)}
+.ln{padding:3px 14px 3px 38px;position:relative;white-space:pre;color:#b9c6d3}
+.ln::before{content:attr(data-n);position:absolute;left:12px;color:#3d4753;font-size:11px}
+.ln.d{background:var(--no-bg);color:#ffb4ae}
+.ln.d::after{content:"\2212";position:absolute;left:26px;color:var(--no)}
+.ln.a{background:var(--ok-bg);color:#8ee79a}
+.ln.a::after{content:"+";position:absolute;left:26px;color:var(--ok)}
+.finding{margin-top:20px;font-family:var(--mono);font-size:13px;color:var(--muted)}
+.finding b{color:var(--no);font-weight:500}
+
+.cta{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:34px}
+.pill{display:inline-flex;gap:12px;align-items:center;font-family:var(--mono);
+      font-size:14px;background:var(--panel);border:1px solid var(--line);
+      border-radius:7px;padding:11px 18px}
+.pill s{color:var(--dim);text-decoration:none}
+.btn{font-family:var(--mono);font-size:13px;text-decoration:none;padding:12px 18px;
+     border-radius:7px;border:1px solid var(--line);color:var(--muted)}
+.btn:hover{color:var(--fg);border-color:var(--muted)}
+.meta{margin-top:26px;font-family:var(--mono);font-size:11.5px;color:var(--dim);
+      display:flex;gap:20px;flex-wrap:wrap}
+
+.states{display:grid;grid-template-columns:1fr 1fr 1.9fr;gap:1px;margin-top:34px;
+        background:var(--line);border:1px solid var(--line)}
+@media(max-width:820px){.states{grid-template-columns:1fr}}
+.st{background:var(--bg);padding:26px 24px}
+.st .k{font-family:var(--mono);font-size:11px;letter-spacing:.18em;margin-bottom:16px}
+.st .v{font-size:1.6rem;font-weight:700;letter-spacing:-.03em;line-height:1.1}
+.st p{font-family:var(--mono);font-size:12px;line-height:1.75;color:var(--dim);margin-top:14px}
+.st.ok .k,.st.ok .v{color:var(--ok)}
+.st.no .k,.st.no .v{color:var(--no)}
+.st.huh{background:var(--huh-bg)}
+.st.huh .k,.st.huh .v{color:var(--huh)}
+.st.huh p{color:#b39257}
+.st.huh .v{font-size:1.75rem}
+
+.note{border-left:2px solid var(--huh);padding-left:20px;margin-top:30px;color:var(--muted)}
+.note strong{color:var(--fg)}
+
+.term{background:var(--sunk);border:1px solid var(--line);border-radius:8px;
+      overflow:hidden;margin-top:24px}
+.term .bar{padding:9px 14px;background:var(--panel);border-bottom:1px solid var(--line);
+           font-family:var(--mono);font-size:11px;color:var(--dim)}
+pre{padding:18px 20px;overflow-x:auto;font-family:var(--mono);
+    font-size:13px;line-height:1.8;color:#b9c6d3}
+.g{color:var(--ok)} .r{color:var(--no)} .y{color:var(--huh)} .dm{color:var(--dim)}
+
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:34px;
+       background:var(--line);border:1px solid var(--line)}
+@media(max-width:820px){.steps{grid-template-columns:1fr}}
+.step{background:var(--bg);padding:24px}
+.step code{color:var(--ok);font-size:13px}
+.step h3{font-size:1rem;font-weight:600;margin:12px 0 8px}
+.step p{color:var(--dim);font-size:14px;line-height:1.6}
+
+.scroll{overflow-x:auto;margin-top:30px;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12.5px;min-width:620px}
+th,td{padding:11px 16px;text-align:left;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+th{background:var(--panel);color:var(--dim);font-weight:500;font-size:10.5px;
+   letter-spacing:.14em;text-transform:uppercase}
+tbody tr:last-child td{border-bottom:none}
+td.z{color:var(--ok)} td.s{color:var(--huh)} td.dm{color:var(--dim)}
+
+footer{border-top:1px solid var(--line-soft);padding:44px 0 60px;
+       font-family:var(--mono);font-size:12.5px;color:var(--dim)}
+footer a{color:var(--muted);text-decoration:none;margin-right:22px}
+footer a:hover{color:var(--fg)}
+footer p{margin-top:18px;line-height:1.9}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <nav>
+    <span class="b">ADDA</span>
+    <span>
+      <a href="#states">How</a>
+      <a href="#proof">Proof</a>
+      <a href="https://pypi.org/project/adda/">PyPI</a>
+      <a href="https://github.com/vyasdx/adda-cli">GitHub</a>
+    </span>
+  </nav>
+</div>
+
+<header>
+  <div class="wrap">
+    <h1>The doc and the code stopped agreeing.<br>Nothing in your pipeline noticed.</h1>
+    <p class="lead">Missing documentation announces itself. Drifted documentation
+      does the opposite — it was true when somebody wrote it, the code moved
+      underneath, and the file still reads as authoritative. It still carries a
+      date. It still passes review.</p>
+
+    <div class="run"><i>$</i> adda audit .</div>
+
+    <div class="diff">
+      <div class="pane">
+        <div class="ph"><span>docs/modules/billing/limiter.md</span>
+          <span class="stale">last verified 2024-11-03</span></div>
+        <div class="ln"   data-n="3">Fixed-window limiter.</div>
+        <div class="ln d" data-n="4">100 requests per calendar minute</div>
+        <div class="ln d" data-n="5">counter resets at the top of the minute</div>
+        <div class="ln"   data-n="6"> </div>
+        <div class="ln"   data-n="7">## Known gotcha</div>
+        <div class="ln d" data-n="8">a client can send 200 in two seconds</div>
+      </div>
+      <div class="pane">
+        <div class="ph"><span>src/billing/limiter.py</span>
+          <span class="fresh">changed 41 days ago</span></div>
+        <div class="ln"   data-n="3">Token bucket limiter.</div>
+        <div class="ln a" data-n="4">CAPACITY = 60</div>
+        <div class="ln a" data-n="5">REFILL_PER_SECOND = 1</div>
+        <div class="ln"   data-n="6"> </div>
+        <div class="ln"   data-n="7">def allow(client_id):</div>
+        <div class="ln a" data-n="8">    refill = elapsed * REFILL_PER_SECOND</div>
+      </div>
+    </div>
+
+    <p class="finding"><b>[high] doc stale</b> &nbsp; docs/modules/billing/limiter.md
+      &nbsp;·&nbsp; the code's commit is a descendant of the doc's</p>
+
+    <div class="cta">
+      <span class="pill"><s>$</s> pip install adda</span>
+      <a class="btn" href="https://github.com/vyasdx/adda-cli">Read the README →</a>
+    </div>
+
+    <div class="meta">
+      <span>MIT</span><span>Python 3.10+</span><span>84 tests</span>
+      <span>no API key</span><span>deterministic · offline</span>
+    </div>
+  </div>
+</header>
+
+<section id="states">
+  <div class="wrap">
+    <div class="eyebrow">The part nobody else has</div>
+    <h2>Every check has two answers.<br>This one has three.</h2>
+    <p class="lead">Staleness is decided by git commit ancestry, not a
+      hand-written date. Sometimes ancestry cannot decide — a rebase, divergent
+      branches, a shallow clone. That is a third answer, and it gets reported as
+      one.</p>
+
+    <div class="states">
+      <div class="st ok"><div class="k">01 · CURRENT</div><div class="v">Fine.</div>
+        <p>The doc's commit follows the code's, or they landed together. It was
+           actually checked.</p></div>
+      <div class="st no"><div class="k">02 · STALE</div><div class="v">Wrong.</div>
+        <p>The code's commit is a descendant of the doc's. The doc got left
+           behind, and the gate refuses the next commit.</p></div>
+      <div class="st huh"><div class="k">03 · CANNOT TELL</div>
+        <div class="v">I don't know — and I'm saying so.</div>
+        <p>Reported under [skipped], never counted as a pass. A tool that cannot
+           tell and answers "fine" is worse than no tool at all, because you
+           believe it. Every amber mark on this page is that third answer.</p></div>
+    </div>
+
+    <div class="note">
+      <strong>This is not a caveat, it is the design.</strong> A green check
+      returned over evidence the tool never had is the exact failure this exists
+      to prevent — so the honest answer had to be sayable before the other two
+      were worth anything.
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">What it does</div>
+    <h2>Route, sweep, refuse.</h2>
+
+    <div class="steps">
+      <div class="step"><code>adda sync --map</code>
+        <h3>Route</h3>
+        <p>An explicit, greppable map from every code path to the document that
+           must change with it. Derived from the repo, not hand-kept.</p></div>
+      <div class="step"><code>adda audit</code>
+        <h3>Sweep</h3>
+        <p>Missing, stale, orphaned and unmapped docs across the whole
+           repository. Exits non-zero, so it drops straight into CI.</p></div>
+      <div class="step"><code>adda hook install</code>
+        <h3>Refuse</h3>
+        <p>A commit gate. Staged code without its staged document does not get
+           committed — not a warning you learn to scroll past.</p></div>
+    </div>
+
+    <div class="term">
+      <div class="bar">git commit — with the gate installed</div>
+<pre><span class="dm">$</span> git commit -m "switch limiter to token bucket"
+<span class="r">Commit blocked: 1 code change(s) without their doc.</span>
+<span class="r">  src/billing/limiter.py  -&gt;  update and stage docs/modules/billing/limiter.md</span>
+
+<span class="dm">Update the doc (bump `Last verified`, append to its Change Log), then stage it.</span>
+<span class="dm">To bypass deliberately: `git commit --no-verify`, or set ADDA_SKIP=1.</span></pre>
+    </div>
+  </div>
+</section>
+
+<section id="proof">
+  <div class="wrap">
+    <div class="eyebrow">Measured, not asserted</div>
+    <h2>Run against codebases it did not design.</h2>
+    <p class="lead">Commit SHAs are recorded, because otherwise the numbers are
+      reproducible mechanically but not in time. The amber column is the point:
+      it is what ADDA <em>declined</em> to map, said out loud.</p>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>repo</th><th>commit</th><th>files mapped</th>
+          <th>reported as skipped</th><th>collisions</th><th>time</th></tr></thead>
+        <tbody>
+          <tr><td>django</td><td class="dm">0b40210</td><td>719</td><td>—</td><td class="z">0</td><td class="dm">2.18s</td></tr>
+          <tr><td>date-fns</td><td class="dm">a0a3922</td><td>1256</td><td>—</td><td class="z">0</td><td class="dm">1.33s</td></tr>
+          <tr><td>fastapi</td><td class="dm">9a8a13f</td><td>41</td><td class="s">458 · docs_src/</td><td class="z">0</td><td class="dm">0.26s</td></tr>
+          <tr><td>flask</td><td class="dm">d318b68</td><td>21</td><td>—</td><td class="z">0</td><td class="dm">0.01s</td></tr>
+          <tr><td>requests</td><td class="dm">5460f46</td><td>18</td><td>—</td><td class="z">0</td><td class="dm">0.01s</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <strong>On fastapi it could have shown 41 files and looked tidy.</strong>
+      Instead it names the 458 it skipped and why — a directory of tutorial
+      snippets with no <code>__init__.py</code> — so the call is yours rather
+      than the tool's. Zero collisions across 2,066 mapped files: a doc path
+      shared by two code paths is a module reported as documented while having no
+      documentation of its own, and the mapping is derived so that cannot happen.
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Honest limits</div>
+    <h2>What it cannot see.</h2>
+    <p class="lead">ADDA detects the document nobody touched. It does not detect
+      the document somebody touched carelessly — if the code and the doc are
+      committed together but the doc was updated wrongly, ancestry says they
+      moved together and every check passes.</p>
+    <p class="lead">Catching that needs a model reading both and forming a
+      judgement. ADDA is deterministic and offline by design, so it does not
+      cross that line. The limit is published rather than left for you to find.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Two minutes</div>
+    <h2>On a repo you already have.</h2>
+    <div class="term">
+      <div class="bar">bash</div>
+<pre><span class="dm">$</span> pip install adda
+<span class="dm">$</span> cd /your/project
+<span class="dm">$</span> adda sync . --map --out adda/MODULE_MAP.json
+<span class="dm">$</span> adda audit .
+
+<span class="r">Doc drift detected: 2 finding(s)</span>
+<span class="r">  [high  ] doc missing    docs/modules/auth/session.md</span>
+<span class="r">  [high  ] doc missing    docs/modules/billing/limiter.md</span></pre>
+    </div>
+    <div class="cta">
+      <a class="btn" href="https://github.com/vyasdx/adda-cli">GitHub →</a>
+      <a class="btn" href="https://pypi.org/project/adda/">PyPI →</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <a href="https://github.com/vyasdx/adda-cli">GitHub</a>
+    <a href="https://pypi.org/project/adda/">PyPI</a>
+    <a href="https://github.com/vyasdx/adda-cli/blob/main/LICENSE">MIT</a>
+    <p>ADDA — Anti-Drift Documentation Architecture. Built by Vedavyas Vayalpadu.<br>
+      Three colours on this page: <span class="g">green is current</span>,
+      <span class="r">red is stale</span>, <span class="y">amber is cannot tell</span>.
+      None of them are decoration.</p>
+  </div>
+</footer>
+
+</body>
+</html>
