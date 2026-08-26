@@ -21,6 +21,7 @@ Usage:
 """
 
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -32,6 +33,21 @@ from adda.okf import compile_okf            # noqa: E402
 from adda.sync import discover_modules, module_map_json   # noqa: E402
 
 
+def _sha(repo: Path) -> str:
+    """Short SHA of the benchmarked checkout, so a run is reproducible in time.
+
+    Without it the table is mechanically reproducible but not scientifically:
+    someone running this next month benchmarks different code and gets
+    different numbers with no way to tell why.
+    """
+    try:
+        out = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=repo,
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    return out.stdout.strip() if out.returncode == 0 else "unknown"
+
+
 def measure(repo: Path) -> dict:
     t0 = time.perf_counter()
     modules = discover_modules(repo)
@@ -41,6 +57,7 @@ def measure(repo: Path) -> dict:
     docs = list(mapping["map"].values())
     row = {
         "repo": repo.name,
+        "sha": _sha(repo),
         "modules": len(modules),
         "mapped": len(docs),
         "exempt": len(mapping["exempt"]),
@@ -62,15 +79,15 @@ def measure(repo: Path) -> dict:
 
 def render(rows: list) -> str:
     out = [
-        "| repo | modules | mapped | exempt | collisions | time | load-bearing | overall | payload cut |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| repo | commit | modules | mapped | exempt | collisions | time | load-bearing | overall | payload cut |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         fid = f'{r["load_bearing"]}%' if r["load_bearing"] is not None else "n/a"
         ov = f'{r["overall"]}%' if r["overall"] is not None else "n/a"
         pc = f'{r["payload_cut"]}%' if r["payload_cut"] is not None else "n/a"
         out.append(
-            f'| {r["repo"]} | {r["modules"]} | {r["mapped"]} | {r["exempt"]} '
+            f'| {r["repo"]} | `{r["sha"]}` | {r["modules"]} | {r["mapped"]} | {r["exempt"]} '
             f'| {r["collisions"]} | {r["seconds"]}s | {fid} | {ov} | {pc} |'
         )
     return "\n".join(out)

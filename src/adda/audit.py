@@ -25,19 +25,14 @@ import subprocess
 from pathlib import Path
 
 from adda.modulemap import is_exempt, load_map
-from adda.sync import _map_ignored, discover_modules
+from adda.sync import source_files
 
 
-def _source_files(repo: Path) -> list[str]:
-    """Every source .py under a discovered module, posix-relative to repo."""
-    found = []
-    for _name, mod_path in discover_modules(repo):
-        for py in sorted((repo / mod_path).rglob("*.py")):
-            rel = py.relative_to(repo)
-            if any(_map_ignored(part) for part in rel.parts[:-1]):
-                continue
-            found.append(rel.as_posix())
-    return found
+# Source discovery is imported, never reimplemented here. This function and
+# the map generator diverged once: the map covered ts/tsx/js while this
+# globbed `*.py`, so a newly added TypeScript file was absent from the map
+# AND invisible to the unmapped-code rule below - it escaped enforcement
+# entirely (BUG-ADDA-013).
 
 
 def _git_out(repo: Path, args: list[str]):
@@ -138,7 +133,7 @@ def audit_report(repo: Path, adda_dir: Path) -> tuple[list[dict], list]:
 
     # 3) source escaping the map entirely — an explicit map means a new file is
     #    unmapped, and unmapped would otherwise mean silently unenforced.
-    for src in _source_files(repo):
+    for src in source_files(repo):
         if src not in mapping and not is_exempt(src, exempt):
             findings.append({"item": src, "issue": "code unmapped", "severity": "medium"})
 

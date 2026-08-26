@@ -178,3 +178,20 @@ def test_map_excludes_declarations_bundles_and_tests(tmp_path):
 
     mapping = json.loads(module_map_json(tmp_path))["map"]
     assert mapping == {"src/app/real.ts": "docs/modules/app/real.md"}
+
+def test_python_root_without_init_is_examples_even_with_stray_js(tmp_path):
+    """ENH-ADDA-017 / BUG-ADDA-014. fastapi's docs_src/ holds 369 .py snippets
+    AND a couple of .js files, so an "all Python" test was defeated by one
+    stray file. A root that CONTAINS Python must be a package."""
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    (lib / "__init__.py").write_text("", encoding="utf-8")
+    (lib / "core.py").write_text("x = 1\n", encoding="utf-8")
+
+    ex = tmp_path / "docs_src"
+    ex.mkdir()
+    (ex / "tutorial.py").write_text("x = 1\n", encoding="utf-8")
+    (ex / "demo.js").write_text("const x = 1\n", encoding="utf-8")
+
+    mapping = json.loads(module_map_json(tmp_path))["map"]
+    assert mapping == {"lib/core.py": "docs/modules/lib/core.md"}

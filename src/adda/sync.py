@@ -140,6 +140,45 @@ def _map_ignored(name: str) -> bool:
     return name in MAP_IGNORE_DIRS or name.startswith(".") or name.endswith(".egg-info")
 
 
+def source_files(repo: Path) -> list:
+    """Every documentable source file in the repo, posix-relative.
+
+    THE single definition of "what code must be documented", shared by
+    `module_map_json` and `audit`. They diverged once — the map covered
+    ts/tsx/js while audit still globbed `*.py`, so a newly added TypeScript
+    file was absent from the map AND invisible to the unmapped-code rule, and
+    escaped enforcement entirely (BUG-ADDA-013).
+
+    Root selection is language-aware. A Python directory without `__init__.py`
+    is examples rather than a package (fastapi's docs_src/ is 369 tutorial
+    snippets), but a TypeScript directory never has one, so judging it by that
+    test deleted the whole frontend of a mixed repo (BUG-ADDA-014). So the
+    package test applies ONLY to roots whose source is entirely Python.
+    """
+    roots = []
+    for _name, mod_path in discover_modules(repo):
+        files = [
+            f for f in sorted((repo / mod_path).rglob("*"))
+            if f.is_file() and _is_source(f.name)
+            and not any(_map_ignored(part) for part in f.relative_to(repo).parts[:-1])
+        ]
+        if not files:
+            continue
+        has_python = any(f.name.endswith(".py") for f in files)
+        is_package = (repo / mod_path / "__init__.py").is_file()
+        roots.append((mod_path, files, has_python, is_package))
+
+    # A root that CONTAINS Python must be a Python package. `all python` was
+    # too fragile: fastapi's docs_src/ ships a couple of .js examples beside
+    # 369 .py snippets, so one stray file defeated the test. Roots with no
+    # Python at all (a TypeScript frontend) are never judged by this, since
+    # they cannot have an __init__.py. Only filters when some package exists,
+    # so a loose-script layout still maps.
+    if any(r[3] for r in roots):
+        roots = [r for r in roots if r[3] or not r[2]]
+    return [f.relative_to(repo).as_posix() for r in roots for f in r[1]]
+
+
 def module_map_json(repo: Path, doc_dir: str = "docs/modules") -> str:
     """Derive MODULE_MAP.json content: every source .py -> its module doc.
 
@@ -156,26 +195,11 @@ def module_map_json(repo: Path, doc_dir: str = "docs/modules") -> str:
     definition across sync, diff and audit.
     """
     mapping, exempt = {}, []
-    candidates = discover_modules(repo)
-    # Prefer real Python packages when the repo has any. FastAPI's docs_src/
-    # holds 369 tutorial snippets and no __init__.py, against 41 files in the
-    # fastapi/ package itself - without this, 90% of the generated map demands
-    # module docs for documentation examples. Scoped to the GENERATOR:
-    # discover_modules is shared with `adda diff`, and widening shared
-    # behaviour for a local convenience already caused one regression.
-    packaged = [c for c in candidates if (repo / c[1] / "__init__.py").is_file()]
-    if packaged:
-        candidates = packaged
-    for _name, mod_path in candidates:
-        for py in sorted(f for f in (repo / mod_path).rglob("*") if f.is_file() and _is_source(f.name)):
-            rel = py.relative_to(repo).as_posix()
-            # rglob descends into ignored subtrees (templates/, __pycache__/) too.
-            if any(_map_ignored(part) for part in py.relative_to(repo).parts[:-1]):
-                continue
-            if py.name in MAP_EXEMPT_NAMES:
-                exempt.append(rel)
-                continue
-            # mirror the path, not just the stem - see the docstring
-            stem_path = rel[4:] if rel.startswith("src/") else rel
-            mapping[rel] = f"{doc_dir}/{stem_path.rsplit('.', 1)[0]}.md"
+    for rel in source_files(repo):
+        if rel.rsplit("/", 1)[-1] in MAP_EXEMPT_NAMES:
+            exempt.append(rel)
+            continue
+        # mirror the path, not just the stem - see the docstring
+        stem_path = rel[4:] if rel.startswith("src/") else rel
+        mapping[rel] = f"{doc_dir}/{stem_path.rsplit('.', 1)[0]}.md"
     return json.dumps({"map": mapping, "exempt": sorted(exempt)}, indent=2)

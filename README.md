@@ -200,21 +200,24 @@ gate run automatically, not only when someone remembers to type `adda audit`.
 
 ## Numbers
 
-Measured 2026-08-27 by `benchmarks/run.py` against real repositories ADDA did not
+Measured 2026-08-26 by `benchmarks/run.py` against real repositories ADDA did not
 design. Reproduce with:
 
 ```bash
 python benchmarks/run.py . ../flask ../django ../date-fns
 ```
 
-| repo | modules | mapped | exempt | collisions | time | load-bearing | overall | payload cut |
-|---|---|---|---|---|---|---|---|---|
-| ADDA | 1 | 11 | 1 | 0 | 0.01s | **100.0%** | 86.7% | 46.9% |
-| flask | 1 | 21 | 3 | 0 | 0.01s | n/a | n/a | n/a |
-| requests | 1 | 18 | 1 | 0 | 0.00s | n/a | n/a | n/a |
-| fastapi | 2 | 41 | 7 | 0 | 0.03s | n/a | n/a | n/a |
-| django | 3 | 718 | 199 | 0 | 1.14s | n/a | n/a | n/a |
-| date-fns | 2 | 1259 | 0 | 0 | 0.65s | n/a | n/a | n/a |
+| repo | commit | modules | mapped | exempt | collisions | time | load-bearing | overall | payload cut |
+|---|---|---|---|---|---|---|---|---|---|
+| ADDA | `8421a94` | 1 | 11 | 1 | 0 | 0.01s | **100.0%** | 86.7% | 46.9% |
+| flask | `d318b68` | 1 | 21 | 3 | 0 | 0.01s | n/a | n/a | n/a |
+| requests | `5460f46` | 1 | 18 | 1 | 0 | 0.00s | n/a | n/a | n/a |
+| fastapi | `9a8a13f` | 2 | 41 | 7 | 0 | 0.11s | n/a | n/a | n/a |
+| django | `0b40210` | 3 | 718 | 199 | 0 | 1.12s | n/a | n/a | n/a |
+| date-fns | `a0a3922` | 2 | 1259 | 0 | 0 | 0.63s | n/a | n/a | n/a |
+
+Commit SHAs are recorded because otherwise the table is reproducible mechanically
+but not in time — running it next month benchmarks different code.
 
 **Zero collisions across 2,068 mapped files.** That number is the point: a doc path
 that two code paths share is a module reported as documented while having no

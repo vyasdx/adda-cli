@@ -27,6 +27,7 @@ Findings are `{"item": str, "issue": str, "severity": str}`. Five issues: `doc m
 
 ## Change Log (newest first)
 
+- [2026-08-26] BUG-ADDA-013 — `_source_files` deleted; discovery now imported from `sync` · it globbed `*.py` while the map covered ts/js, so a TypeScript file added after the map was written was invisible to the unmapped-code rule and escaped enforcement entirely.
 - [2026-08-26] ENH-ADDA-011 — recorded that CI must check out with `fetch-depth: 0` · the documented shallow-clone limitation stops being theoretical the moment `audit` runs on a runner, where shallow is the default.
 - [2026-08-18] ENH-ADDA-007 — doc corrected: staleness is `compare_commits` (three-state ancestry), not the removed `is_strictly_later` · the doc had drifted from the code within the same day, which is the exact defect this module detects.
 - [2026-08-18] ENH-ADDA-007 — module created · v0.3 enforcement layer: the doc-drift check `adda diff` structurally cannot perform.

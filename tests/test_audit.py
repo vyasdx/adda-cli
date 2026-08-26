@@ -339,3 +339,54 @@ def test_audit_would_have_caught_the_2026_08_07_doc_hole(tmp_path):
     missing = {f["item"] for f in findings if f["issue"] == "doc missing"}
     assert missing == {f"docs/modules/{m}.md" for m in modules}
     assert all(f["severity"] == "high" for f in findings if f["issue"] == "doc missing")
+
+def test_new_typescript_file_added_after_sync_is_caught_as_unmapped(tmp_path):
+    """BUG-ADDA-013, end to end: generate the map, THEN add a .ts file.
+
+    The map generator covered ts/tsx/js while audit still globbed *.py, so a
+    file added after the map was written was absent from the map AND invisible
+    to the unmapped-code rule. It escaped enforcement entirely. This asserts
+    ongoing enforcement, not just map generation.
+    """
+    from adda.sync import module_map_json
+
+    app = tmp_path / "src" / "app"
+    app.mkdir(parents=True)
+    (app / "index.ts").write_text("export const x = 1\n", encoding="utf-8")
+
+    adda = tmp_path / "adda"
+    adda.mkdir()
+    (adda / MAP_FILENAME).write_text(module_map_json(tmp_path), encoding="utf-8")
+    (tmp_path / "docs" / "modules" / "app").mkdir(parents=True)
+    (tmp_path / "docs" / "modules" / "app" / "index.md").write_text("# d\n", encoding="utf-8")
+
+    findings, _ = audit_report(tmp_path, adda)
+    assert findings == [], "baseline should be clean"
+
+    # a developer adds a file and does not regenerate the map
+    (app / "payment.ts").write_text("export const y = 1\n", encoding="utf-8")
+
+    findings, _ = audit_report(tmp_path, adda)
+    assert ("src/app/payment.ts", "code unmapped", "medium") in _issues(findings)
+
+
+def test_mixed_python_and_typescript_repo_keeps_both(tmp_path):
+    """BUG-ADDA-014: `backend/` having __init__.py must not delete `frontend/`.
+
+    The package test was applied to every root, so one Python package in a
+    monorepo dropped the entire TypeScript side from the map and from audit.
+    """
+    from adda.sync import module_map_json
+
+    be = tmp_path / "src" / "backend"
+    be.mkdir(parents=True)
+    (be / "__init__.py").write_text("", encoding="utf-8")
+    (be / "api.py").write_text("x = 1\n", encoding="utf-8")
+
+    fe = tmp_path / "src" / "frontend"
+    fe.mkdir(parents=True)
+    (fe / "app.ts").write_text("export const x = 1\n", encoding="utf-8")
+
+    mapping = json.loads(module_map_json(tmp_path))["map"]
+    assert "src/backend/api.py" in mapping
+    assert "src/frontend/app.ts" in mapping
