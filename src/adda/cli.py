@@ -23,6 +23,33 @@ from adda.rehydrate import minimal_okf
 from adda.sentinel import ContextSentinel, count_tokens, limit_for
 from adda.sync import skeleton_markdown
 
+
+def _force_utf8_output() -> None:
+    """Emit UTF-8 on stdout/stderr regardless of the console codepage.
+
+    BUG-ADDA-022. On Windows a REDIRECTED stdout gets the console codepage
+    (cp1252), so the first non-ASCII byte raises UnicodeEncodeError. ADDA's own
+    OKF carries `->` arrows, so `adda rehydrate . > out.json` crashed - and
+    stdout is the documented default for `rehydrate`, the command the whole
+    tool is built around. `--out` was unaffected because it writes explicit
+    UTF-8, which is why this survived every local run.
+
+    JSON is UTF-8 by specification, so forcing it is correct rather than merely
+    convenient. Guarded because a captured or already-detached stream may not
+    be reconfigurable.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8")
+        except (ValueError, OSError):  # detached, or not a real text stream
+            pass
+
+
+_force_utf8_output()
+
 app = typer.Typer(
     help="ADDA - anti-drift architecture memory + OKF + Context Sentinel.",
     no_args_is_help=True,

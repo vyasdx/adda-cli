@@ -2,6 +2,7 @@
 # Coded by - Claude Code
 """End-to-end CLI checks for the init -> export -> checkpoint flow."""
 
+import json
 import re
 from pathlib import Path
 
@@ -36,3 +37,26 @@ def test_init_export_checkpoint(tmp_path):
     body = snaps[0].read_text(encoding="utf-8")
     assert "before compact" in body
     assert "Current State" in body  # copied from CURRENT.md
+
+def test_rehydrate_survives_a_non_utf8_console_codepage():
+    """BUG-ADDA-022: `adda rehydrate` crashed when piped on Windows.
+
+    A redirected stdout takes the console codepage, and ADDA's own OKF carries
+    non-ASCII, so the documented default path raised UnicodeEncodeError while
+    `--out` (explicit UTF-8) worked. PYTHONIOENCODING reproduces that failure
+    on any platform, so this guards it on Linux CI too.
+    """
+    import os
+    import subprocess
+    import sys as _sys
+
+    root = Path(__file__).resolve().parents[1]
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252"}
+    out = subprocess.run(
+        [_sys.executable, "-m", "adda.cli", "rehydrate", str(root)],
+        capture_output=True, env=env, cwd=root, timeout=60,
+    )
+    assert out.returncode == 0, out.stderr.decode("utf-8", "replace")[-500:]
+    payload = json.loads(out.stdout.decode("utf-8"))
+    assert payload["project"], "rehydrate emitted no project"
+    assert payload["constraints"], "rehydrate emitted no constraints"
