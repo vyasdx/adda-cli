@@ -6,11 +6,11 @@
 </p>
 
 <p align="center">
-  <i>Your documentation stopped being true. Nothing told you.</i>
+  <i>Your code changed. Your docs should know.</i>
 </p>
 
 <p align="center">
-  <sub>Missing docs are visible. Drifted docs are not.</sub>
+  <sub>Stale documentation no longer just misleads people. It becomes AI context.</sub>
 </p>
 
 <p align="center">
@@ -23,13 +23,18 @@
 
 ---
 
-**ADDA** (Anti-Drift Documentation Architecture) finds documentation that has
-quietly stopped being true — and tells you what it could not determine.
+**ADDA** (Anti-Drift Documentation Architecture) keeps your documentation true
+as your code changes — and tells you what it could not determine.
 
 Missing documentation is visible. Drifted documentation is not: it was true when
-written, the code moved, and the file still reads as authoritative. Agents make
-this worse in both directions — they generate documentation readily, and they
-have no mechanism to notice when what they wrote stopped being true.
+written, the code moved, and the file still reads as authoritative. That used to
+cost somebody a confused afternoon. It is now read by agents, which generate
+documentation readily, have no mechanism to notice when what they wrote stopped
+being true, and write code from it faster than anyone reviews.
+
+ADDA detects that drift from git history, **blocks the commit** that introduces
+it, and reports every case it could not decide rather than returning a green
+check over evidence it never had.
 
 ## Two minutes, on a repo you already have
 
