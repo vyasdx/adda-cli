@@ -361,15 +361,31 @@ def eval_cmd(
     json_out: bool = typer.Option(False, "--json", help="Emit the report as JSON."),
 ) -> None:
     """Score rehydration fidelity: how much architecture memory survives `rehydrate`."""
-    report = evaluate(compile_okf(_resolve_adda_dir(path)))
+    adda_dir = _resolve_adda_dir(path)
+    report = evaluate(compile_okf(adda_dir), adda_dir)
     if json_out:
         typer.echo(json.dumps(report, indent=2))
+        return
+    if report["overall_fidelity_pct"] is None:
+        typer.secho(
+            "Rehydration fidelity: n/a - every architecture file is still the "
+            "scaffold `adda init` wrote. There is no authored memory to score.",
+            fg=typer.colors.YELLOW,
+        )
+        typer.echo("  write your constraints, modules and decisions into adda/, then re-run.")
         return
     typer.secho(
         f"Rehydration fidelity: {report['overall_fidelity_pct']}% overall, "
         f"{report['load_bearing_fidelity_pct']}% load-bearing",
         fg=typer.colors.GREEN,
     )
+    if report["unauthored_template_files"]:
+        typer.secho(
+            "  [partial] still unwritten scaffold: "
+            + ", ".join(report["unauthored_template_files"])
+            + " - the score counts placeholder text as memory.",
+            fg=typer.colors.YELLOW,
+        )
     typer.echo(
         f"  facts preserved: {report['facts_preserved']}/{report['facts_total']}  |  "
         f"payload {report['payload_reduction_pct']}% smaller "

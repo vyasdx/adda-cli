@@ -75,7 +75,7 @@ def measure(repo: Path) -> dict:
 
     adda_dir = repo / "adda"
     if (adda_dir / "VERSION.md").is_file():
-        r = evaluate(compile_okf(adda_dir))
+        r = evaluate(compile_okf(adda_dir), adda_dir)
         row["load_bearing"] = r["load_bearing_fidelity_pct"]
         row["overall"] = r["overall_fidelity_pct"]
         row["payload_cut"] = r["payload_reduction_pct"]

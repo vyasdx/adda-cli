@@ -55,6 +55,15 @@ jobs:
       - name: Tests
         run: python -m pytest -q
 
+      # ENH-ADDA-020. The README's test badge is a published claim about this
+      # repo, kept by hand, and it drifted five times — twice while fixing an
+      # unrelated bug. It is not auto-corrected: rewriting a stale number hides
+      # the drift, and noticing is the point (same reason `audit` reports a
+      # stale doc rather than touching it).
+      - name: Published counts — badge and open items must match reality
+        if: matrix.python-version == '3.13'
+        run: python scripts/check_counts.py
+
       - name: Drift — documented modules vs the actual repo
         run: adda diff .
 
@@ -75,6 +84,8 @@ jobs:
           r = json.load(open("eval.json"))
           lb = r["load_bearing_fidelity_pct"]
           print(f"load-bearing: {lb}%  overall: {r['overall_fidelity_pct']}%")
+          if lb is None:
+              sys.exit("FAIL: eval scored nothing - every architecture file is still the init scaffold")
           if lb < 100.0:
               sys.exit(f"FAIL: load-bearing fidelity {lb}% < 100% — rehydrate has lost critical architecture memory")
           PY

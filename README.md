@@ -16,7 +16,7 @@
 <p align="center">
   <img alt="version 0.3.0" src="https://img.shields.io/badge/version-0.3.0-1d9e75">
   <img alt="python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-185fa5">
-  <img alt="tests 82 passing" src="https://img.shields.io/badge/tests-82%20passing-3b6d11">
+  <img alt="tests 84 passing" src="https://img.shields.io/badge/tests-84%20passing-3b6d11">
   <img alt="OKF v0.2" src="https://img.shields.io/badge/OKF-v0.2-534ab7">
   <img alt="provider-agnostic" src="https://img.shields.io/badge/LLM-provider--agnostic-0f6e56">
 </p>
@@ -255,6 +255,37 @@ context ("schema.org for architecture context"). The locked schema (v0.2) is doc
 in **[OKF_SCHEMA.md](OKF_SCHEMA.md)**, with ADDA as its reference implementation. The
 same JSON feeds any LLM; `adda rehydrate` is the integration surface a future MCP server
 or editor skill can expose without changing the format.
+
+## What staleness detection cannot see
+
+Worth stating plainly, because it is the boundary of the technique rather than a
+bug queued for a future release.
+
+`audit` decides a doc is stale by **git commit ancestry**: if the code's last
+commit is a descendant of the doc's last commit, the doc was written first and
+has not been touched since. That is a reliable answer to one question — *was
+this doc left behind?*
+
+It cannot answer a different one: **was this doc updated, but updated wrongly?**
+
+We hit exactly that here. Two module docs contradicted themselves one day after
+being written: one described a function that had been deleted in the same
+commit, the other listed a public surface that no longer matched. Both were
+committed alongside the code they describe, so ancestry called them current, the
+commit gate passed, `audit` passed, and CI was green. A human reviewer found
+them.
+
+So: **ADDA detects the doc nobody touched. It does not detect the doc someone
+touched carelessly.** The first is the common failure and is worth automating.
+The second still needs review, and no ancestry check will ever catch it.
+
+Two related boundaries, for completeness:
+
+- **Ancestry can be undecidable**, on a shallow clone or after a rebase. ADDA
+  reports those under `[skipped]` rather than counting them as fresh — a check
+  that cannot answer says so.
+- **Discovery reports what it *chose* to skip, not what it never reached.** A
+  root the heuristic drops is printed; see the `skipped` column above.
 
 ## Limitations
 
