@@ -3,7 +3,7 @@
 
 # `sentinel` - `src/adda/sentinel.py`
 
-Last verified: 2026-08-25
+Last verified: 2026-08-26
 
 **Purpose** - Context Sentinel - the token-usage gauge that answers *when* to checkpoint.
 
@@ -25,6 +25,7 @@ Last verified: 2026-08-25
 
 ## Change Log (newest first)
 
+- [2026-08-26] BUG-ADDA-012 — the Anthropic SDK is now an OPTIONAL extra (`pip install adda[anthropic]`) rather than a hard dependency · it is imported lazily and already falls back to chars/4, so requiring it contradicted the provider-agnostic scope guard and pulled a vendor SDK into every install of a tool that makes no inference calls.
 - [2026-08-25] BUG-ADDA-008 — dropped an internal message-ID reference from the outbound-call invariant · this file ships in the public export, and the reference leaked the company's internal operating name past a marker scan that could not see it.
 - [2026-08-18] BUG-ADDA-005 — deferred annotations + `requires-python` raised to 3.10 · `str | None` raised TypeError at import on the declared 3.9 floor.
 - [2026-08-18] ENH-ADDA-006 - module doc created (backfill; code unchanged) · the anti-drift rule requires a doc per code path and `docs/modules/` was empty.

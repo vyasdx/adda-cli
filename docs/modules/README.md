@@ -7,16 +7,19 @@ One doc per code path in `src/adda/`. **Read the doc before editing the file; up
 
 | Doc | Code | What it is |
 |---|---|---|
-| [cli.md](cli.md) | `src/adda/cli.py` | Typer entrypoint - the eight commands |
-| [okf.md](okf.md) | `src/adda/okf.py` | OKF schema (locked v0.2) + markdown compiler |
-| [sentinel.md](sentinel.md) | `src/adda/sentinel.py` | Context Sentinel token gauge |
-| [rehydrate.md](rehydrate.md) | `src/adda/rehydrate.py` | Minimal OKF - the north-star |
-| [compress.md](compress.md) | `src/adda/compress.py` | Optional headroom-ai wrapper |
-| [sync.md](sync.md) | `src/adda/sync.py` | Architecture skeleton generator |
-| [diff.md](diff.md) | `src/adda/diff.py` | Drift detection |
-| [evaluate.md](evaluate.md) | `src/adda/evaluate.py` | Rehydration fidelity metric |
+| [cli.md](adda/cli.md) | `src/adda/cli.py` | Typer entrypoint - the eight commands |
+| [okf.md](adda/okf.md) | `src/adda/okf.py` | OKF schema (locked v0.2) + markdown compiler |
+| [sentinel.md](adda/sentinel.md) | `src/adda/sentinel.py` | Context Sentinel token gauge |
+| [rehydrate.md](adda/rehydrate.md) | `src/adda/rehydrate.py` | Minimal OKF - the north-star |
+| [compress.md](adda/compress.md) | `src/adda/compress.py` | Optional headroom-ai wrapper |
+| [sync.md](adda/sync.md) | `src/adda/sync.py` | Architecture skeleton generator |
+| [diff.md](adda/diff.md) | `src/adda/diff.py` | Drift detection |
+| [evaluate.md](adda/evaluate.md) | `src/adda/evaluate.py` | Rehydration fidelity metric |
 
 Not documented here: `__init__.py` (version constant only) and `templates/` (seed scaffold data, not code).
+
+
+**Path convention.** A module doc mirrors its source path minus `src/`, so `src/adda/cli.py` routes to `docs/modules/adda/cli.md`. Stem-only naming collided across packages and produced false passes (BUG-ADDA-011).
 
 ## The rule (from `CLAUDE.md`)
 

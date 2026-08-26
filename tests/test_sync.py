@@ -63,8 +63,8 @@ def test_module_map_json_maps_source_files_to_docs(tmp_path):
 
     data = json.loads(module_map_json(tmp_path))
     assert data["map"] == {
-        "src/pkg/cli.py": "docs/modules/cli.md",
-        "src/pkg/core.py": "docs/modules/core.md",
+        "src/pkg/cli.py": "docs/modules/pkg/cli.md",
+        "src/pkg/core.py": "docs/modules/pkg/core.md",
     }
     # __init__.py is a version/export stub, not a documented code path.
     assert "src/pkg/__init__.py" in data["exempt"]
@@ -93,7 +93,7 @@ def test_sync_map_flag_writes_json(tmp_path):
     res = runner.invoke(app, ["sync", str(tmp_path), "--map", "--out", str(out)])
     assert res.exit_code == 0
     assert json.loads(out.read_text(encoding="utf-8"))["map"] == {
-        "src/pkg/core.py": "docs/modules/core.md"
+        "src/pkg/core.py": "docs/modules/pkg/core.md"
     }
 
 
@@ -104,3 +104,22 @@ def test_discover_modules_still_sees_a_templates_source_dir(tmp_path):
     (tmp_path / "src" / "templates" / "views.py").write_text("x = 1\n", encoding="utf-8")
     assert ("templates", "src/templates") in discover_modules(tmp_path)
     assert json.loads(module_map_json(tmp_path))["map"] == {}
+
+
+def test_same_named_files_in_different_packages_do_not_collide(tmp_path):
+    # BUG-ADDA-011. Stem-only naming routed both of these to
+    # docs/modules/utils.md, so one doc satisfied two modules and `audit`
+    # reported "no doc drift" over a module that had none — a false pass in
+    # the routing table itself.
+    for pkg in ("payments", "users"):
+        (tmp_path / "src" / pkg).mkdir(parents=True)
+        (tmp_path / "src" / pkg / "utils.py").write_text("x = 1\n", encoding="utf-8")
+
+    mapping = json.loads(module_map_json(tmp_path))["map"]
+    assert mapping == {
+        "src/payments/utils.py": "docs/modules/payments/utils.md",
+        "src/users/utils.py": "docs/modules/users/utils.md",
+    }
+    # the property that actually matters: no two code paths share a doc
+    docs = list(mapping.values())
+    assert len(docs) == len(set(docs)), "two code paths route to the same doc"

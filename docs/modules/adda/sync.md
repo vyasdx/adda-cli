@@ -3,7 +3,7 @@
 
 # `sync` - `src/adda/sync.py`
 
-Last verified: 2026-08-18
+Last verified: 2026-08-26
 
 **Purpose** - Derive an ADDA architecture *skeleton* from a codebase, so the docs can be refreshed instead of rotting.
 
@@ -21,6 +21,7 @@ Last verified: 2026-08-18
 
 ## Change Log (newest first)
 
+- [2026-08-26] BUG-ADDA-011 — `module_map_json` now MIRRORS the source path (`src/payments/utils.py` -> `docs/modules/payments/utils.md`) instead of using the filename stem · stem-only routing sent two same-named files in different packages to ONE doc, so `audit` reported "no doc drift" over a module that had none. Mirroring makes collision impossible by construction.
 - [2026-08-18] ENH-ADDA-007 — MODULE_MAP generation uses a map-local `MAP_IGNORE_DIRS`; the shared `IGNORE_DIRS` is deliberately left untouched · widening it would drop a real `templates/` source package from `adda diff` in every repo.
 - [2026-08-18] ENH-ADDA-007 — `sync` gained `module_map_json` / `--map`, deriving code→doc routing from `discover_modules` · one definition of "what is source" across sync, diff and audit.
 - [2026-08-18] ENH-ADDA-006 - module doc created (backfill; code unchanged) · the anti-drift rule requires a doc per code path and `docs/modules/` was empty.

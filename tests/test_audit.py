@@ -7,7 +7,7 @@ import subprocess
 
 from typer.testing import CliRunner
 
-from adda.audit import audit_report, last_commit_sha
+from adda.audit import audit_report
 from adda.cli import app
 from adda.modulemap import MAP_FILENAME
 

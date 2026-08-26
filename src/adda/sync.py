@@ -120,6 +120,15 @@ def _map_ignored(name: str) -> bool:
 def module_map_json(repo: Path, doc_dir: str = "docs/modules") -> str:
     """Derive MODULE_MAP.json content: every source .py -> its module doc.
 
+    The doc path MIRRORS the source path (minus a leading `src/`), so
+    `src/payments/utils.py` routes to `docs/modules/payments/utils.md`.
+
+    It used to use only the filename stem, which meant `src/payments/utils.py`
+    and `src/users/utils.py` both routed to `docs/modules/utils.md` — one doc
+    silently satisfying two different modules, so `audit` reported "no doc
+    drift" over a module that had none (BUG-ADDA-011). Mirroring makes that
+    impossible by construction: distinct source paths cannot collide.
+
     Reuses `discover_modules` so "what counts as source" has exactly one
     definition across sync, diff and audit.
     """
@@ -133,5 +142,7 @@ def module_map_json(repo: Path, doc_dir: str = "docs/modules") -> str:
             if py.name in MAP_EXEMPT_NAMES:
                 exempt.append(rel)
                 continue
-            mapping[rel] = f"{doc_dir}/{py.stem}.md"
+            # mirror the path, not just the stem - see the docstring
+            stem_path = rel[4:] if rel.startswith("src/") else rel
+            mapping[rel] = f"{doc_dir}/{stem_path[:-3]}.md"
     return json.dumps({"map": mapping, "exempt": sorted(exempt)}, indent=2)

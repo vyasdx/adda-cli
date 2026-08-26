@@ -16,19 +16,49 @@ keywords = ["llm", "context", "okf", "architecture", "anti-drift", "ai"]
 dependencies = [
     "typer>=0.12",
     "pydantic>=2",
-    "anthropic>=0.39",
 ]
 
 # headroom-ai is intentionally NOT a hard dependency. ADDA degrades gracefully
 # to a no-op when it is absent (see adda/compress.py). Install with the extra
 # below to enable real compression.
 [project.optional-dependencies]
+# The Anthropic SDK is used ONLY by `adda monitor` for exact Claude token
+# counts, is imported lazily, and falls back to a chars/4 heuristic when
+# absent. Shipping it as a hard requirement contradicted the
+# provider-agnostic scope guard (ADR-0005) and pulled a vendor SDK into
+# every install of a tool that makes no inference calls (BUG-ADDA-012).
+anthropic = ["anthropic>=0.39"]
 headroom = ["headroom-ai"]
 dev = ["pytest>=8"]
-all = ["headroom-ai", "pytest>=8"]
+all = ["anthropic>=0.39", "headroom-ai", "pytest>=8"]
 
 [project.scripts]
 adda = "adda.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/adda"]
+
+[tool.ruff]
+target-version = "py310"          # must match requires-python
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+# Deliberately narrow. Each rule set earns its place:
+#   E9 — syntax and runtime errors
+#   F  — pyflakes: undefined names, unused imports (found a real leftover from
+#        the last_commit_ts -> last_commit_sha refactor)
+#   FA — flake8-future-annotations. This is the BUG-ADDA-005 guard: it reports
+#        "uses PEP 604 union without `from __future__ import annotations`" when
+#        the target version predates it. Dormant at the current 3.10 floor, and
+#        kept because that bug shipped in a release once already.
+select = ["E9", "F", "FA"]
+
+# NOT enabled, each for a concrete reason rather than taste:
+#   B008     — `typer.Option(...)` as a default IS Typer's required idiom.
+#   BLE001   — the broad `except Exception` paths in compress.py and sync.py are
+#              deliberate graceful degradation, documented as such.
+#   S110     — same try/except/pass fallbacks.
+#   PLW1510  — wants subprocess(check=True), but audit._is_ancestor MUST read
+#              exit 1 (a real "no") apart from 128 (cannot tell). check=True
+#              would collapse that distinction and break the three-state
+#              staleness logic this project exists to get right.

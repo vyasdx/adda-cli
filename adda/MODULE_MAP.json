@@ -1,19 +1,18 @@
 {
   "map": {
-    "src/adda/audit.py": "docs/modules/audit.md",
-    "src/adda/cli.py": "docs/modules/cli.md",
-    "src/adda/compress.py": "docs/modules/compress.md",
-    "src/adda/diff.py": "docs/modules/diff.md",
-    "src/adda/evaluate.py": "docs/modules/evaluate.md",
-    "src/adda/hook.py": "docs/modules/hook.md",
-    "src/adda/modulemap.py": "docs/modules/modulemap.md",
-    "src/adda/okf.py": "docs/modules/okf.md",
-    "src/adda/rehydrate.py": "docs/modules/rehydrate.md",
-    "src/adda/sentinel.py": "docs/modules/sentinel.md",
-    "src/adda/sync.py": "docs/modules/sync.md"
+    "src/adda/audit.py": "docs/modules/adda/audit.md",
+    "src/adda/cli.py": "docs/modules/adda/cli.md",
+    "src/adda/compress.py": "docs/modules/adda/compress.md",
+    "src/adda/diff.py": "docs/modules/adda/diff.md",
+    "src/adda/evaluate.py": "docs/modules/adda/evaluate.md",
+    "src/adda/hook.py": "docs/modules/adda/hook.md",
+    "src/adda/modulemap.py": "docs/modules/adda/modulemap.md",
+    "src/adda/okf.py": "docs/modules/adda/okf.md",
+    "src/adda/rehydrate.py": "docs/modules/adda/rehydrate.md",
+    "src/adda/sentinel.py": "docs/modules/adda/sentinel.md",
+    "src/adda/sync.py": "docs/modules/adda/sync.md"
   },
   "exempt": [
-    "src/adda/__init__.py",
-    "src/adda/templates/**"
+    "src/adda/__init__.py"
   ]
 }
