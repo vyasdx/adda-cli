@@ -1,0 +1,92 @@
+# Developed by - Vedavyas Vayalpadu - vyas4c3@gmail.com
+# Coded by - Claude Code
+#
+# ENH-ADDA-019. Publishes to PyPI with NO stored credential: PyPI's trusted
+# publishing accepts a short-lived OIDC token minted by GitHub for this exact
+# repository and workflow. There is no API token to leak, rotate or accidentally
+# package - which matters here, because BUG-ADDA-023 found a credential one
+# `twine upload` away from being published permanently.
+#
+# Runs in the PUBLIC mirror, never in the working repo. A PyPI version number
+# can never be reused, so every gate below fails closed.
+
+name: Release to PyPI
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write     # the OIDC token that replaces an API token
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Build
+        run: |
+          pip install build==1.4.2 twine
+          python -m build --sdist --wheel --outdir dist .
+
+      # A tag that disagrees with the packaged version publishes the wrong
+      # thing under the right name, and the wrong thing cannot be withdrawn.
+      - name: Tag must match the packaged version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          python - <<'PY'
+          import os, sys, tomllib
+          version = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
+          tag = os.environ["GITHUB_REF"].removeprefix("refs/tags/v")
+          print(f"tag v{tag} / packaged {version}")
+          if tag != version:
+              sys.exit(f"FAIL: tag v{tag} does not match pyproject version {version}")
+          PY
+
+      # The same allowlist proof CI runs. Repeated here deliberately: this is
+      # the irreversible step, and a guard that only runs upstream is a guard
+      # someone can route around.
+      - name: Package guard — nothing internal may ship
+        run: |
+          python - <<'PY'
+          import glob, sys, tarfile
+          names = tarfile.open(glob.glob("dist/*.tar.gz")[0]).getnames()
+          rels = [n.split("/", 1)[1] for n in names if "/" in n]
+          allowed = {"README.md", "OKF_SCHEMA.md", ".gitignore", ".gitattributes"}
+          bad = [r for r in rels
+                 if (r.split("/")[0].startswith(".") and r not in allowed)
+                 or (r.endswith(".md") and "/" not in r and r not in allowed)]
+          if bad:
+              for b in sorted(bad):
+                  print('  ' + b)
+              sys.exit(f"FAIL: {len(bad)} file(s) in the sdist are not part of the package")
+          print(f"sdist clean: {len(rels)} files")
+          PY
+
+      # `adda init` scaffolds from packaged template files. A wheel that builds
+      # but ships none of them installs fine and breaks on first use.
+      - name: The wheel must carry the init templates
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+          names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+          templates = [n for n in names if "/templates/" in n]
+          print(f"templates in wheel: {len(templates)}")
+          if len(templates) < 7:
+              sys.exit("FAIL: wheel is missing scaffold templates - `adda init` would break")
+          PY
+
+      - name: Metadata check
+        run: python -m twine check dist/*
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
