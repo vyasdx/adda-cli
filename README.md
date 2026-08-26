@@ -6,11 +6,11 @@
 </p>
 
 <p align="center">
-  <i>Your AI forgets your architecture. ADDA remembers it for them.</i>
+  <i>Your documentation stopped being true. Nothing told you.</i>
 </p>
 
 <p align="center">
-  <sub>Compression shrinks the pipe. ADDA breaks the drift.</sub>
+  <sub>Missing docs are visible. Drifted docs are not.</sub>
 </p>
 
 <p align="center">
@@ -80,24 +80,53 @@ checks above, and entirely optional — `sync`, `audit` and `hook` never read it
 
 ## Where ADDA fits
 
-A whole class of tools **compresses** what flows to the model — shrinking tool
-outputs, file reads, and JSON in the pipe (e.g. [headroom-ai](https://github.com/chopratejas/headroom),
-which ADDA wires in optionally). But compression fights the provider's prefix cache
-for the *same tokens*, and on cache-heavy agent traffic the cache usually wins —
-real-world code reviews land ~4%. ADDA works one layer up: not the bytes in any single
-request, but the **persistent, versioned memory** of your architecture across
-sessions — a different axis, with no cache to collide with.
+Most tools in this space work on **what flows to the model** — compressing tool
+outputs, retrieving relevant chunks, summarising a long session. ADDA works on
+**what is true about your repository**, which is a different question and does
+not compete with any of them.
 
-That layer is exactly where **drift** lives — and it's the gap compression layers
-don't close. ADDA owns it: `adda diff` measures when code has drifted from the docs,
-`adda audit` sweeps the whole repo for doc-layer drift the moment it happens, `adda
-hook` blocks a commit that introduces it, and `adda eval` measures how much memory
-survives a rehydration. ADDA doesn't just **detect** drift — it **enforces** against
-it at commit time. Compress the pipe *and* anchor the memory — they stack.
+Nothing there detects drift. A compressor makes a stale document smaller. A
+retriever finds it faster. A summariser condenses it. All three then hand the
+model a confident description of a system that no longer exists.
+
+ADDA is the layer that asks whether the document is still true — `audit` sweeps
+for it, `hook` blocks a commit that introduces it, and both report what they
+could not determine. Token compression is a real concern and a genuinely
+separate one; if you want it, ADDA wires [headroom-ai](https://github.com/chopratejas/headroom)
+in optionally, and the two stack rather than overlap.
 
 ## Before / after
 
-**Before** — you hit `/compact` without a handover:
+**Before** — the code changes, the doc does not, and nothing objects:
+
+```text
+$ git commit -m "switch the limiter to a token bucket"
+[main 4f2c1a9] switch the limiter to a token bucket
+ 1 file changed, 12 insertions(+), 9 deletions(-)
+```
+
+The commit lands. `limiter.md` still describes the old fixed window, still
+carries a `Last verified` stamp, and still reads as authoritative. Six weeks
+later somebody builds on it.
+
+**After** — `adda hook install`, and the same commit is refused:
+
+```text
+$ git commit -m "switch the limiter to a token bucket"
+Commit blocked: 1 code change(s) without their doc.
+  src/billing/limiter.py  ->  update and stage docs/modules/billing/limiter.md
+
+Update the doc (bump `Last verified`, append to its Change Log), then stage it.
+To bypass deliberately: `git commit --no-verify`, or set ADDA_SKIP=1.
+```
+
+Not a warning you learn to scroll past. The commit does not happen. You either
+write the doc or you override deliberately — and an override is a decision
+somebody made, not an accident.
+
+---
+
+The same thing, one layer up — **before**, you hit `/compact` without a handover:
 
 ```text
 You:    continue implementing the payment flow
