@@ -87,8 +87,26 @@ def init(
                 fg=typer.colors.RED,
             )
             raise typer.Exit(1)
-        shutil.rmtree(dest)
-    shutil.copytree(TEMPLATES, dest)
+    if dest.exists():
+        # NEVER rmtree. --force means "overwrite the scaffold", not "delete
+        # everything accumulated here". It used to remove the whole directory,
+        # taking MODULE_MAP.json and STATE/checkpoints with it - and with no
+        # map the commit gate silently stops blocking anything, so a routine
+        # re-scaffold disarmed enforcement with no signal at all.
+        kept = [
+            f for f in sorted(dest.rglob("*"))
+            if f.is_file() and not (TEMPLATES / f.relative_to(dest)).exists()
+        ]
+        shutil.copytree(TEMPLATES, dest, dirs_exist_ok=True)
+        if kept:
+            typer.secho(
+                f"Kept {len(kept)} file(s) that are not part of the scaffold:",
+                fg=typer.colors.YELLOW,
+            )
+            for f in kept:
+                typer.echo(f"  {f.relative_to(dest).as_posix()}")
+    else:
+        shutil.copytree(TEMPLATES, dest)
     typer.secho(f"Scaffolded ADDA memory at {dest}", fg=typer.colors.GREEN)
 
 
@@ -182,6 +200,7 @@ def rehydrate(
     data = minimal_okf(compile_okf(adda_dir))
     text = _maybe_compress(json.dumps(data, indent=2, ensure_ascii=False), compress)
     if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(text + "\n", encoding="utf-8")
         typer.secho(f"Wrote minimal OKF -> {out}", fg=typer.colors.GREEN)
     else:
@@ -232,6 +251,7 @@ def sync(
     text = module_map_json(repo) if map_ else skeleton_markdown(repo)
     label = "MODULE_MAP" if map_ else "skeleton"
     if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(text + "\n", encoding="utf-8")
         typer.secho(f"Wrote {label} -> {out}", fg=typer.colors.GREEN)
     else:

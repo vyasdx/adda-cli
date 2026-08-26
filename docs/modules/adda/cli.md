@@ -3,7 +3,7 @@
 
 # `cli` - `src/adda/cli.py`
 
-Last verified: 2026-08-18
+Last verified: 2026-08-26
 
 **Purpose** - ADDA's only entrypoint - the Typer app that wires the twelve commands to the library modules.
 
@@ -36,6 +36,7 @@ Last verified: 2026-08-18
 
 ## Change Log (newest first)
 
+- [2026-08-26] BUG-ADDA-016/017 — `--out` now creates its parent directory, and `init --force` overwrites scaffold files instead of `rmtree`ing the directory · the first crashed on step 1 of the README quickstart, the second silently deleted MODULE_MAP.json and with it the commit gate's ability to block anything.
 - [2026-08-18] ENH-ADDA-007 — re-verified after "bake the interpreter into the hook" (`dfdfa00`) · `hook_install` now imports `hook_body`/`sys` and builds the stub with `sys.executable`; `cli.py` gained a `python -m adda.cli` entrypoint so the baked-in hook stub can invoke it without `adda` on `PATH`. Documented in Invariants.
 - [2026-08-18] ENH-ADDA-007 — added `hook install` (writes `.git/hooks/pre-commit`, refuses to clobber without `--force`) · `hook run` added to the Commands table (it existed in code but was undocumented). Command count in Purpose corrected to twelve.
 - [2026-08-18] ENH-ADDA-007 — `audit --json` now emits JSON on the missing-MODULE_MAP error path too · a CI script piping to `jq` broke on the one error it most needed to parse. Command count in Purpose corrected.

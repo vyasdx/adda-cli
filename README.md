@@ -16,7 +16,7 @@
 <p align="center">
   <img alt="version 0.3.0" src="https://img.shields.io/badge/version-0.3.0-1d9e75">
   <img alt="python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-185fa5">
-  <img alt="tests 67 passing" src="https://img.shields.io/badge/tests-67%20passing-3b6d11">
+  <img alt="tests 75 passing" src="https://img.shields.io/badge/tests-75%20passing-3b6d11">
   <img alt="OKF v0.2" src="https://img.shields.io/badge/OKF-v0.2-534ab7">
   <img alt="provider-agnostic" src="https://img.shields.io/badge/LLM-provider--agnostic-0f6e56">
 </p>
@@ -36,11 +36,15 @@ have no mechanism to notice when what they wrote stopped being true.
 No setup, no authored documents, nothing to fill in first:
 
 ```bash
-pip install adda
+git clone https://github.com/vyasdx/adda-cli && pip install -e adda-cli
 
+cd /your/project
 adda sync . --map --out adda/MODULE_MAP.json   # route each code path to its doc
 adda audit .                                   # what has drifted?
 ```
+
+> **Not on PyPI yet**, so `pip install adda` will not work — install from source
+> as above. Packaging is tracked as ENH-ADDA-019.
 
 ```
 Doc drift detected: 2 finding(s)
@@ -110,7 +114,7 @@ You:    no. we decided that months ago. it's in the ledger.
 
 ```bash
 adda rehydrate . | your-llm   # minimal OKF: version + constraints + active ADRs + active modules
-# memory restored in seconds, ~58% fewer tokens than the full export
+# memory restored in seconds, ~47% fewer tokens than the full export
 ```
 
 ## 1. Why not just Claude's native Compaction?
