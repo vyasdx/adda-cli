@@ -9,7 +9,7 @@ Last verified: 2026-08-26
 
 ## Public surface
 
-`discover_modules(repo) -> [(name, posix path)]` · `discover_deps(repo)` · `skeleton_markdown(repo)` · `module_map_json(repo, doc_dir)`
+`source_files(repo) -> list[str]` (**the shared definition of documentable source, used by `audit` too**) · `discover_modules(repo) -> [(name, posix path)]` · `discover_deps(repo)` · `skeleton_markdown(repo)` · `module_map_json(repo, doc_dir)`
 
 ## Invariants
 
@@ -21,6 +21,7 @@ Last verified: 2026-08-26
 
 ## Change Log (newest first)
 
+- [2026-08-26] RF-ADDA-005 - added `source_files` to the Public surface, which this file's own Change Log had described as the new shared entry point while the surface list still omitted it.
 - [2026-08-26] BUG-ADDA-013/014 — source discovery extracted into a shared `source_files()` used by BOTH the map generator and `audit`, and the package test narrowed to roots that CONTAIN Python · the two had diverged so a new `.ts` file escaped enforcement, and an `all-Python` test was defeated by two stray `.js` files in fastapi's docs_src.
 - [2026-08-26] ENH-ADDA-016 — the map generator now covers `.ts/.tsx/.js/.jsx/.mjs/.cjs` as well as `.py`, and excludes `.d.ts`, `.min.js`, `.test.`/`.spec.` files, bare `test.ts`-style stems, and vendored directories · `discover_deps` already read `package.json` while enforcement stopped at Python. Validated on date-fns (1,259 files, 0 collisions) and django, where 62 vendored jQuery/select2 files had been demanding module docs.
 - [2026-08-26] ENH-ADDA-017 — `module_map_json` now prefers real Python packages (a dir with `__init__.py`) when the repo has any, falling back to all discovered dirs when it has none · running against fastapi mapped 410 files, 369 of them tutorial snippets under `docs_src/`. Scoped to the generator; `discover_modules` (shared with `adda diff`) is untouched.

@@ -48,8 +48,8 @@ adda audit .                                   # what has drifted?
 
 ```
 Doc drift detected: 2 finding(s)
-  [high  ] doc missing    docs/modules/session.md
-  [high  ] doc missing    docs/modules/limiter.md
+  [high  ] doc missing    docs/modules/auth/session.md
+  [high  ] doc missing    docs/modules/billing/limiter.md
 ```
 
 Write those docs, commit, and `audit` goes quiet. Change the code without
@@ -57,7 +57,7 @@ touching its doc, and it comes back:
 
 ```
 Doc drift detected: 1 finding(s)
-  [medium] doc stale      docs/modules/limiter.md
+  [medium] doc stale      docs/modules/billing/limiter.md
 ```
 
 It exits non-zero when it finds something, so it drops straight into CI. Make it
