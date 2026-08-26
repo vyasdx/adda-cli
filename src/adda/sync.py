@@ -106,11 +106,34 @@ def skeleton_markdown(repo: Path) -> str:
 # Files that are code paths but carry no documentable behaviour.
 MAP_EXEMPT_NAMES = {"__init__.py", "__main__.py"}
 
+# Languages whose files count as documentable code paths (ENH-ADDA-016).
+# `discover_deps` already read package.json; the map generator did not, so doc
+# enforcement stopped at Python while most agent-heavy codebases are TS/JS.
+SOURCE_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+
+
+def _is_source(name: str) -> bool:
+    """A documentable source file, as opposed to a declaration, test or bundle."""
+    if not name.endswith(SOURCE_SUFFIXES):
+        return False
+    # `.d.ts` declares types for code documented elsewhere; `.min.js` is a build
+    # artefact; `.test.` / `.spec.` files are tests, and `tests/` is already
+    # ignored for the same reason.
+    if any(b in name for b in (".d.ts", ".min.js", ".test.", ".spec.")):
+        return False
+    # Some ecosystems name the test file itself `test.ts` beside the module it
+    # covers rather than infixing. date-fns does this 253 times; without the
+    # stem check, 17% of its map demanded docs for test files.
+    return name.split(".")[0] not in ("test", "tests", "spec", "specs")
+
 # Directories that hold data, not documentable code paths. Map-local on
 # purpose: IGNORE_DIRS is shared with `adda diff`, so widening it there would
 # silently drop a real `templates/` source package from drift detection in
 # every repo ADDA runs against.
-MAP_IGNORE_DIRS = IGNORE_DIRS | {"templates"}
+# Third-party code vendored into the tree is not yours to document. Django
+# ships 62 files of jQuery and select2 locales under static/admin/js/vendor;
+# without this the map demands a module doc for jQuery (ENH-ADDA-016).
+MAP_IGNORE_DIRS = IGNORE_DIRS | {"templates", "vendor", "vendored", "third_party", "third-party"}
 
 
 def _map_ignored(name: str) -> bool:
@@ -133,8 +156,18 @@ def module_map_json(repo: Path, doc_dir: str = "docs/modules") -> str:
     definition across sync, diff and audit.
     """
     mapping, exempt = {}, []
-    for _name, mod_path in discover_modules(repo):
-        for py in sorted((repo / mod_path).rglob("*.py")):
+    candidates = discover_modules(repo)
+    # Prefer real Python packages when the repo has any. FastAPI's docs_src/
+    # holds 369 tutorial snippets and no __init__.py, against 41 files in the
+    # fastapi/ package itself - without this, 90% of the generated map demands
+    # module docs for documentation examples. Scoped to the GENERATOR:
+    # discover_modules is shared with `adda diff`, and widening shared
+    # behaviour for a local convenience already caused one regression.
+    packaged = [c for c in candidates if (repo / c[1] / "__init__.py").is_file()]
+    if packaged:
+        candidates = packaged
+    for _name, mod_path in candidates:
+        for py in sorted(f for f in (repo / mod_path).rglob("*") if f.is_file() and _is_source(f.name)):
             rel = py.relative_to(repo).as_posix()
             # rglob descends into ignored subtrees (templates/, __pycache__/) too.
             if any(_map_ignored(part) for part in py.relative_to(repo).parts[:-1]):
@@ -144,5 +177,5 @@ def module_map_json(repo: Path, doc_dir: str = "docs/modules") -> str:
                 continue
             # mirror the path, not just the stem - see the docstring
             stem_path = rel[4:] if rel.startswith("src/") else rel
-            mapping[rel] = f"{doc_dir}/{stem_path[:-3]}.md"
+            mapping[rel] = f"{doc_dir}/{stem_path.rsplit('.', 1)[0]}.md"
     return json.dumps({"map": mapping, "exempt": sorted(exempt)}, indent=2)

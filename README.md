@@ -200,17 +200,36 @@ gate run automatically, not only when someone remembers to type `adda audit`.
 
 ## Numbers
 
-> Full synthetic + real-repo benchmark suite is coming. Preliminary, measured on the
-> reference scaffold with `adda eval`:
+Measured 2026-08-27 by `benchmarks/run.py` against real repositories ADDA did not
+design. Reproduce with:
 
-| metric | value |
-|---|---|
-| Load-bearing fidelity (constraints + active modules/ADRs survive rehydration) | **100%** |
-| Overall fidelity (all facts) | 58.3% |
-| Payload reduction (minimal vs full OKF) | **~58% smaller** |
+```bash
+python benchmarks/run.py . ../flask ../django ../date-fns
+```
 
-The 100% is the point: `rehydrate` loses **none** of the load-bearing architecture
-memory while cutting the payload roughly in half.
+| repo | modules | mapped | exempt | collisions | time | load-bearing | overall | payload cut |
+|---|---|---|---|---|---|---|---|---|
+| ADDA | 1 | 11 | 1 | 0 | 0.01s | **100.0%** | 86.7% | 46.9% |
+| flask | 1 | 21 | 3 | 0 | 0.01s | n/a | n/a | n/a |
+| requests | 1 | 18 | 1 | 0 | 0.00s | n/a | n/a | n/a |
+| fastapi | 2 | 41 | 7 | 0 | 0.03s | n/a | n/a | n/a |
+| django | 3 | 718 | 199 | 0 | 1.14s | n/a | n/a | n/a |
+| date-fns | 2 | 1259 | 0 | 0 | 0.65s | n/a | n/a | n/a |
+
+**Zero collisions across 2,068 mapped files.** That number is the point: a doc path
+that two code paths share is a module reported as documented while having no
+documentation, and the mapping is derived so that cannot happen.
+
+**Why fidelity is `n/a` for most rows, and not filled in.** Rehydration fidelity
+scores how much *authored* architecture memory survives `rehydrate`. Real
+repositories have none — running `adda init` first would score an empty scaffold,
+which measures the template rather than the tool. So it is reported only where real
+`/adda` memory exists.
+
+Where it can be measured, load-bearing fidelity is **100%**: `rehydrate` loses none
+of the constraints, active modules or in-force decisions while cutting the payload
+roughly in half. Overall fidelity sits below 100% by design — dropping prose and
+inactive items is the compression trade-off.
 
 ## OKF — the format
 

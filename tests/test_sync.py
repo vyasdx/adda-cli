@@ -123,3 +123,58 @@ def test_same_named_files_in_different_packages_do_not_collide(tmp_path):
     # the property that actually matters: no two code paths share a doc
     docs = list(mapping.values())
     assert len(docs) == len(set(docs)), "two code paths route to the same doc"
+
+def test_map_prefers_real_packages_over_example_directories(tmp_path):
+    # ENH-ADDA-017, found by running against fastapi: docs_src/ holds 369
+    # tutorial snippets and no __init__.py, against 41 files in the fastapi
+    # package. Without preferring packages, 90% of the generated map demanded
+    # module docs for documentation examples.
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "lib" / "core.py").write_text("x = 1\n", encoding="utf-8")
+
+    (tmp_path / "docs_src" / "tutorial").mkdir(parents=True)
+    (tmp_path / "docs_src" / "tutorial" / "example.py").write_text("x = 1\n", encoding="utf-8")
+
+    mapping = json.loads(module_map_json(tmp_path))["map"]
+    assert mapping == {"lib/core.py": "docs/modules/lib/core.md"}
+
+
+def test_map_falls_back_to_all_dirs_when_no_package_exists(tmp_path):
+    # A loose-script layout with no __init__.py anywhere must still be mapped,
+    # rather than silently producing an empty map.
+    (tmp_path / "src" / "billing").mkdir(parents=True)
+    (tmp_path / "src" / "billing" / "limiter.py").write_text("x = 1\n", encoding="utf-8")
+
+    mapping = json.loads(module_map_json(tmp_path))["map"]
+    assert mapping == {"src/billing/limiter.py": "docs/modules/billing/limiter.md"}
+
+def test_map_covers_typescript_and_javascript(tmp_path):
+    # ENH-ADDA-016. discover_deps already read package.json, but the map
+    # generator globbed *.py only, so doc enforcement stopped at Python.
+    src = tmp_path / "src" / "app"
+    src.mkdir(parents=True)
+    for f in ("index.ts", "widget.tsx", "legacy.js", "helper.mjs"):
+        (src / f).write_text("export const x = 1\n", encoding="utf-8")
+
+    mapping = json.loads(module_map_json(tmp_path))["map"]
+    assert mapping == {
+        "src/app/helper.mjs": "docs/modules/app/helper.md",
+        "src/app/index.ts": "docs/modules/app/index.md",
+        "src/app/legacy.js": "docs/modules/app/legacy.md",
+        "src/app/widget.tsx": "docs/modules/app/widget.md",
+    }
+
+
+def test_map_excludes_declarations_bundles_and_tests(tmp_path):
+    # `.d.ts` documents code documented elsewhere and `.min.js` is a build
+    # artefact. The bare `test.ts` case is from date-fns, which names the test
+    # beside its module 253 times rather than infixing `.test.` — without the
+    # stem check that was 17% of its generated map.
+    src = tmp_path / "src" / "app"
+    src.mkdir(parents=True)
+    for f in ("real.ts", "types.d.ts", "bundle.min.js", "real.test.ts", "test.ts", "spec.js"):
+        (src / f).write_text("export const x = 1\n", encoding="utf-8")
+
+    mapping = json.loads(module_map_json(tmp_path))["map"]
+    assert mapping == {"src/app/real.ts": "docs/modules/app/real.md"}
