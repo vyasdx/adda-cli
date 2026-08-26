@@ -38,6 +38,27 @@ def load_map(adda_dir: Path) -> tuple[dict[str, str], list[str]]:
     return mapping, [_norm(g) for g in (data.get("exempt") or [])]
 
 
+def load_include(adda_dir: Path) -> list[str]:
+    """Source roots to map even though the package heuristic would drop them.
+
+    `source_roots` treats a Python directory with no `__init__.py` as examples
+    rather than code — a guess that is right for fastapi's 369 tutorial
+    snippets and wrong for a plain `toolscripts/`, which vanished repo-wide the
+    moment any package existed (BUG-ADDA-020). Per DEC-ADDA-009 the guess now
+    reports itself in `audit` output, and this list is how you overrule it:
+    deliberate, greppable and diffable, like the rest of the map.
+
+    Absent file returns [] rather than raising — `load_map` already owns the
+    loud failure for a missing map, and duplicating it here would make every
+    caller handle the same error twice.
+    """
+    target = adda_dir / MAP_FILENAME
+    if not target.is_file():
+        return []
+    data = json.loads(target.read_text(encoding="utf-8"))
+    return [_norm(p) for p in (data.get("include") or [])]
+
+
 def is_exempt(path: str, exempt: list[str]) -> bool:
     """True if `path` matches any exempt glob."""
     norm = _norm(path)

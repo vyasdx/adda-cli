@@ -390,3 +390,48 @@ def test_mixed_python_and_typescript_repo_keeps_both(tmp_path):
     mapping = json.loads(module_map_json(tmp_path))["map"]
     assert "src/backend/api.py" in mapping
     assert "src/frontend/app.ts" in mapping
+
+
+def test_audit_reports_the_root_it_chose_not_to_map(tmp_path):
+    """DEC-ADDA-009: a wrong guess must cost a printed line, not a whole directory.
+
+    `toolscripts/` disappears because `pkgmod/` has an `__init__.py`
+    (BUG-ADDA-020). The heuristic is kept deliberately, so the guarantee is not
+    that the files get mapped — it is that `audit` says so out loud instead of
+    reporting a clean sweep over code nothing is enforcing.
+    """
+    (tmp_path / "pkgmod").mkdir()
+    (tmp_path / "pkgmod" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "pkgmod" / "core.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "toolscripts").mkdir()
+    (tmp_path / "toolscripts" / "build.py").write_text("y = 2\n", encoding="utf-8")
+
+    adda = tmp_path / "adda"
+    adda.mkdir()
+    (adda / MAP_FILENAME).write_text(
+        json.dumps({"map": {"pkgmod/core.py": "docs/modules/pkgmod/core.md"},
+                    "exempt": ["pkgmod/__init__.py"]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "docs" / "modules" / "pkgmod").mkdir(parents=True)
+    (tmp_path / "docs" / "modules" / "pkgmod" / "core.md").write_text("d\n", encoding="utf-8")
+
+    findings, skipped = audit_report(tmp_path, adda)
+    assert not findings, findings
+    assert any("toolscripts" in note for note in skipped), (
+        "audit reported a clean sweep and never mentioned the root it dropped"
+    )
+
+    # ...and `include` in the map takes it back under enforcement.
+    (adda / MAP_FILENAME).write_text(
+        json.dumps({
+            "map": {"pkgmod/core.py": "docs/modules/pkgmod/core.md"},
+            "exempt": ["pkgmod/__init__.py"],
+            "include": ["toolscripts"],
+        }),
+        encoding="utf-8",
+    )
+    findings, skipped = audit_report(tmp_path, adda)
+    assert {"item": "toolscripts/build.py", "issue": "code unmapped",
+            "severity": "medium"} in findings
+    assert not any("toolscripts" in note for note in skipped)

@@ -103,8 +103,10 @@ def skeleton_markdown(repo: Path) -> str:
     return "\n".join(lines)
 
 
-# Files that are code paths but carry no documentable behaviour.
-MAP_EXEMPT_NAMES = {"__init__.py", "__main__.py"}
+# Files that are code paths but carry no documentable behaviour of their own:
+# package markers, packaging and test plumbing. They land in the map's `exempt`
+# list, so they are visibly excused rather than quietly missing.
+MAP_EXEMPT_NAMES = {"__init__.py", "__main__.py", "conftest.py", "setup.py"}
 
 # Languages whose files count as documentable code paths (ENH-ADDA-016).
 # `discover_deps` already read package.json; the map generator did not, so doc
@@ -120,6 +122,12 @@ def _is_source(name: str) -> bool:
     # artefact; `.test.` / `.spec.` files are tests, and `tests/` is already
     # ignored for the same reason.
     if any(b in name for b in (".d.ts", ".min.js", ".test.", ".spec.")):
+        return False
+    # Now that loose files at the repo root are mapped (BUG-ADDA-018), the root
+    # is full of things that are .js but not behaviour: `.eslintrc.js`,
+    # `rollup.config.js`, `jest.config.ts`. Tool configuration is declared, not
+    # implemented, and a module doc for it says nothing a reader needs.
+    if name.startswith(".") or ".config." in name:
         return False
     # Some ecosystems name the test file itself `test.ts` beside the module it
     # covers rather than infixing. date-fns does this 253 times; without the
@@ -140,8 +148,17 @@ def _map_ignored(name: str) -> bool:
     return name in MAP_IGNORE_DIRS or name.startswith(".") or name.endswith(".egg-info")
 
 
-def source_files(repo: Path) -> list:
-    """Every documentable source file in the repo, posix-relative.
+def _root_files(repo: Path, root: Path) -> list:
+    """Documentable source under `root`, skipping map-ignored directories."""
+    return [
+        f for f in sorted(root.rglob("*"))
+        if f.is_file() and _is_source(f.name)
+        and not any(_map_ignored(part) for part in f.relative_to(repo).parts[:-1])
+    ]
+
+
+def source_roots(repo: Path, include=None) -> tuple[list, list]:
+    """(files, excluded) — documentable source, plus the roots deliberately dropped.
 
     THE single definition of "what code must be documented", shared by
     `module_map_json` and `audit`. They diverged once — the map covered
@@ -154,19 +171,40 @@ def source_files(repo: Path) -> list:
     snippets), but a TypeScript directory never has one, so judging it by that
     test deleted the whole frontend of a mixed repo (BUG-ADDA-014). So the
     package test applies ONLY to roots whose source is entirely Python.
+
+    That test is a guess, and DEC-ADDA-009 settles what happens when it guesses
+    wrong: the guess stays (dropping it buries real findings under 369 snippets)
+    but it is REPORTED, never silent — `excluded` is what `audit` prints — and
+    `include` overrules it. Same shape as the three-state staleness check: a
+    rule that cannot decide has to say so.
     """
-    roots = []
+    forced = {str(p).replace("\\", "/").strip("/") for p in (include or [])}
+    base = repo / "src" if (repo / "src").is_dir() else repo
+    roots = []  # (path, files, has_python, is_package, is_loose)
+
     for _name, mod_path in discover_modules(repo):
-        files = [
-            f for f in sorted((repo / mod_path).rglob("*"))
-            if f.is_file() and _is_source(f.name)
-            and not any(_map_ignored(part) for part in f.relative_to(repo).parts[:-1])
-        ]
-        if not files:
-            continue
-        has_python = any(f.name.endswith(".py") for f in files)
-        is_package = (repo / mod_path / "__init__.py").is_file()
-        roots.append((mod_path, files, has_python, is_package))
+        files = _root_files(repo, repo / mod_path)
+        if files:
+            roots.append((
+                mod_path, files,
+                any(f.name.endswith(".py") for f in files),
+                (repo / mod_path / "__init__.py").is_file(),
+                False,
+            ))
+
+    # Source sitting directly in the base dir, outside any package. Discovery
+    # walks DIRECTORIES only, so a flat repo (`main.py`, `utils.py` at the root)
+    # mapped nothing at all and `audit` reported "No doc drift" over a project
+    # with zero docs (BUG-ADDA-018) — and `src/loose.py` stayed invisible beside
+    # `src/pkg/` (BUG-ADDA-019). Loose files can never carry an `__init__.py`,
+    # so they are exempt from the package test below; without that, fixing these
+    # two bugs would immediately re-hide the files on any repo with a package.
+    loose = [f for f in sorted(base.iterdir()) if f.is_file() and _is_source(f.name)]
+    if loose:
+        rel = base.relative_to(repo).as_posix()
+        roots.append(
+            (rel or ".", loose, any(f.name.endswith(".py") for f in loose), False, True)
+        )
 
     # A root that CONTAINS Python must be a Python package. `all python` was
     # too fragile: fastapi's docs_src/ ships a couple of .js examples beside
@@ -174,12 +212,25 @@ def source_files(repo: Path) -> list:
     # Python at all (a TypeScript frontend) are never judged by this, since
     # they cannot have an __init__.py. Only filters when some package exists,
     # so a loose-script layout still maps.
+    excluded = []
     if any(r[3] for r in roots):
-        roots = [r for r in roots if r[3] or not r[2]]
-    return [f.relative_to(repo).as_posix() for r in roots for f in r[1]]
+        kept = []
+        for root in roots:
+            path, files, has_python, is_package, is_loose = root
+            if is_package or not has_python or is_loose or path in forced:
+                kept.append(root)
+            else:
+                excluded.append((path, f"{len(files)} Python file(s), no __init__.py"))
+        roots = kept
+    return [f.relative_to(repo).as_posix() for r in roots for f in r[1]], excluded
 
 
-def module_map_json(repo: Path, doc_dir: str = "docs/modules") -> str:
+def source_files(repo: Path, include=None) -> list:
+    """Just the files from `source_roots` — for callers that need no report."""
+    return source_roots(repo, include)[0]
+
+
+def module_map_json(repo: Path, doc_dir: str = "docs/modules", include=None) -> str:
     """Derive MODULE_MAP.json content: every source .py -> its module doc.
 
     The doc path MIRRORS the source path (minus a leading `src/`), so
@@ -195,11 +246,16 @@ def module_map_json(repo: Path, doc_dir: str = "docs/modules") -> str:
     definition across sync, diff and audit.
     """
     mapping, exempt = {}, []
-    for rel in source_files(repo):
+    for rel in source_files(repo, include):
         if rel.rsplit("/", 1)[-1] in MAP_EXEMPT_NAMES:
             exempt.append(rel)
             continue
         # mirror the path, not just the stem - see the docstring
         stem_path = rel[4:] if rel.startswith("src/") else rel
         mapping[rel] = f"{doc_dir}/{stem_path.rsplit('.', 1)[0]}.md"
-    return json.dumps({"map": mapping, "exempt": sorted(exempt)}, indent=2)
+    out = {"map": mapping, "exempt": sorted(exempt)}
+    if include:
+        # Round-tripped so regenerating the map does not silently re-drop the
+        # roots the user deliberately opted back in (DEC-ADDA-009).
+        out["include"] = sorted(set(include))
+    return json.dumps(out, indent=2)

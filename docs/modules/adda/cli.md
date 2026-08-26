@@ -36,6 +36,7 @@ Last verified: 2026-08-26
 
 ## Change Log (newest first)
 
+- [2026-08-26] DEC-ADDA-009 - `sync --map --out <path>` reads the existing file's `include` list and carries it forward · an override a routine regeneration erases is not an override.
 - [2026-08-26] BUG-ADDA-022 — stdout/stderr are reconfigured to UTF-8 at CLI entry · a REDIRECTED stdout on Windows takes the console codepage, so `adda rehydrate . > out.json` raised UnicodeEncodeError on the OKF's arrows. That is the documented default path of the north-star command; `--out` was unaffected because it writes explicit UTF-8, which is exactly why every local run looked fine.
 - [2026-08-26] BUG-ADDA-016/017 — `--out` now creates its parent directory, and `init --force` overwrites scaffold files instead of `rmtree`ing the directory · the first crashed on step 1 of the README quickstart, the second silently deleted MODULE_MAP.json and with it the commit gate's ability to block anything.
 - [2026-08-18] ENH-ADDA-007 — re-verified after "bake the interpreter into the hook" (`dfdfa00`) · `hook_install` now imports `hook_body`/`sys` and builds the stub with `sys.executable`; `cli.py` gained a `python -m adda.cli` entrypoint so the baked-in hook stub can invoke it without `adda` on `PATH`. Documented in Invariants.

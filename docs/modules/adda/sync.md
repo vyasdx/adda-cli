@@ -9,18 +9,22 @@ Last verified: 2026-08-26
 
 ## Public surface
 
-`source_files(repo) -> list[str]` (**the shared definition of documentable source, used by `audit` too**) · `discover_modules(repo) -> [(name, posix path)]` · `discover_deps(repo)` · `skeleton_markdown(repo)` · `module_map_json(repo, doc_dir)`
+`source_roots(repo, include) -> (files, excluded)` (**the shared definition of documentable source, used by `audit` too**) · `source_files(repo, include) -> list[str]` · `discover_modules(repo) -> [(name, posix path)]` · `discover_deps(repo)` · `skeleton_markdown(repo)` · `module_map_json(repo, doc_dir)`
 
 ## Invariants
 
 - **Skeleton generator, not a doc writer.** Output is markdown the user reconciles into `ARCHITECTURE.md` by hand; it never overwrites `/adda`.
 - **`discover_modules` is shared with `adda diff`.** It is the single definition of "what counts as a module", so changing it changes drift detection - re-run `adda diff D:\ADDA` after touching it. BUG-ADDA-003 came from exactly this function miscounting dirs whose only files sat in ignored subtrees.
 - Prefers a `src/` layout when present; a directory counts only if it contains files.
+- **Discovery reports what it skips.** `source_roots` returns the roots it dropped along with the files it kept, and `audit` prints them. The package heuristic (a Python dir with no `__init__.py` is examples) is deliberately kept - dropping it buries fastapi's real findings under 369 tutorial snippets - so it must be audible instead (ADR-0009). `include` in `MODULE_MAP.json` overrules it per root.
+- **Loose source files at the base dir are mapped, and are exempt from the package test.** They can never carry an `__init__.py`, so judging them by it would re-hide exactly the files BUG-ADDA-018/019 were about.
+- **Tool configuration is not a documentable module.** Dotfiles and `*.config.*` are filtered, `setup.py`/`conftest.py` land in `exempt` - visible, not dropped. Mapping the repo root made this reachable for the first time.
 - A root-level `adda/` is the scaffolded *data* dir and is skipped - but `src/adda` (the package) is kept.
 - Dependencies are read from `pyproject.toml` or `package.json`.
 
 ## Change Log (newest first)
 
+- [2026-08-26] DEC-ADDA-009 / BUG-ADDA-018/019/020 - `source_files` became `source_roots`, returning `(files, excluded)`, and loose files at the base dir are now mapped · discovery walked directories only, so a flat repo mapped NOTHING and `audit` reported "No doc drift" over a project with zero docs, while `src/loose.py` stayed invisible beside `src/pkg/`. The `__init__.py` heuristic is kept but no longer silent, and `include` overrules it. Mapping the root exposed JS tool config, now filtered.
 - [2026-08-26] RF-ADDA-005 - added `source_files` to the Public surface, which this file's own Change Log had described as the new shared entry point while the surface list still omitted it.
 - [2026-08-26] BUG-ADDA-013/014 — source discovery extracted into a shared `source_files()` used by BOTH the map generator and `audit`, and the package test narrowed to roots that CONTAIN Python · the two had diverged so a new `.ts` file escaped enforcement, and an `all-Python` test was defeated by two stray `.js` files in fastapi's docs_src.
 - [2026-08-26] ENH-ADDA-016 — the map generator now covers `.ts/.tsx/.js/.jsx/.mjs/.cjs` as well as `.py`, and excludes `.d.ts`, `.min.js`, `.test.`/`.spec.` files, bare `test.ts`-style stems, and vendored directories · `discover_deps` already read `package.json` while enforcement stopped at Python. Validated on date-fns (1,259 files, 0 collisions) and django, where 62 vendored jQuery/select2 files had been demanding module docs.

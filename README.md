@@ -16,7 +16,7 @@
 <p align="center">
   <img alt="version 0.3.0" src="https://img.shields.io/badge/version-0.3.0-1d9e75">
   <img alt="python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-185fa5">
-  <img alt="tests 76 passing" src="https://img.shields.io/badge/tests-76%20passing-3b6d11">
+  <img alt="tests 82 passing" src="https://img.shields.io/badge/tests-82%20passing-3b6d11">
   <img alt="OKF v0.2" src="https://img.shields.io/badge/OKF-v0.2-534ab7">
   <img alt="provider-agnostic" src="https://img.shields.io/badge/LLM-provider--agnostic-0f6e56">
 </p>
@@ -153,7 +153,9 @@ instantly restore the LLM's architectural memory. A second loop runs alongside i
 commit time: **`adda hook`** blocks a commit that stages code without its doc, and
 **`adda audit`** catches whatever the hook didn't (pre-existing drift, files that
 predate the gate) on the next repo-wide sweep — detection and enforcement, not
-detection alone.
+detection alone. It also prints, under `[skipped]`, every source root discovery
+chose not to map and why; add that root to `"include"` in `MODULE_MAP.json` to
+pull it back under enforcement.
 
 ## Install
 
@@ -208,24 +210,32 @@ Measured 2026-08-26 by `benchmarks/run.py` against real repositories ADDA did no
 design. Reproduce with:
 
 ```bash
-python benchmarks/run.py . ../flask ../django ../date-fns
+python benchmarks/run.py . ../flask ../requests ../fastapi ../django ../date-fns
 ```
 
-| repo | commit | modules | mapped | exempt | collisions | time | load-bearing | overall | payload cut |
-|---|---|---|---|---|---|---|---|---|---|
-| ADDA | `8421a94` | 1 | 11 | 1 | 0 | 0.01s | **100.0%** | 86.7% | 46.9% |
-| flask | `d318b68` | 1 | 21 | 3 | 0 | 0.01s | n/a | n/a | n/a |
-| requests | `5460f46` | 1 | 18 | 1 | 0 | 0.00s | n/a | n/a | n/a |
-| fastapi | `9a8a13f` | 2 | 41 | 7 | 0 | 0.11s | n/a | n/a | n/a |
-| django | `0b40210` | 3 | 718 | 199 | 0 | 1.12s | n/a | n/a | n/a |
-| date-fns | `a0a3922` | 2 | 1259 | 0 | 0 | 0.63s | n/a | n/a | n/a |
+| repo | commit | modules | mapped | exempt | skipped | collisions | time | load-bearing | overall | payload cut |
+|---|---|---|---|---|---|---|---|---|---|---|
+| ADDA | `66164e4` | 1 | 11 | 1 | 0 | 0 | 0.01s | **100.0%** | 87.1% | 45.6% |
+| flask | `d318b68` | 1 | 21 | 3 | 0 | 0 | 0.01s | n/a | n/a | n/a |
+| requests | `5460f46` | 1 | 18 | 1 | 0 | 0 | 0.01s | n/a | n/a | n/a |
+| fastapi | `9a8a13f` | 2 | 41 | 7 | 458 (`docs_src`) | 0 | 0.26s | n/a | n/a | n/a |
+| django | `0b40210` | 3 | 719 | 199 | 0 | 0 | 2.18s | n/a | n/a | n/a |
+| date-fns | `a0a3922` | 2 | 1256 | 0 | 0 | 0 | 1.33s | n/a | n/a | n/a |
 
 Commit SHAs are recorded because otherwise the table is reproducible mechanically
 but not in time — running it next month benchmarks different code.
 
-**Zero collisions across 2,068 mapped files.** That number is the point: a doc path
+**Zero collisions across 2,066 mapped files.** That number is the point: a doc path
 that two code paths share is a module reported as documented while having no
 documentation, and the mapping is derived so that cannot happen.
+
+**The `skipped` column is the other half, and it is deliberately in the table.**
+`audit` can only report drift in code that discovery mapped, so a root it never
+reaches is reported as clean rather than as unexamined. fastapi's `docs_src/` is
+458 tutorial snippets in a directory with no `__init__.py`; mapping them would
+bury every real finding, so ADDA skips them — and says so, in `audit` output and
+here, instead of quietly showing 41. Overrule it per root with `"include"` in
+`MODULE_MAP.json` (ADR-0009).
 
 **Why fidelity is `n/a` for most rows, and not filled in.** Rehydration fidelity
 scores how much *authored* architecture memory survives `rehydrate`. Real

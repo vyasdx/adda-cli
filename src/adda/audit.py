@@ -16,6 +16,10 @@ Five rules:
    (medium severity). Git history unavailable for either side is never
    treated as fresh — it is recorded in `skipped` instead.
 
+Source roots that discovery deliberately skipped are reported in `skipped` too
+(DEC-ADDA-009), so a wrong guess about what is a module costs you a printed
+line rather than a whole unenforced directory.
+
 Deterministic and offline — no model calls (ADR-0003). Any rule that cannot run
 is REPORTED as skipped, never silently passed: a check that fails quietly is
 worse than no check.
@@ -24,8 +28,8 @@ worse than no check.
 import subprocess
 from pathlib import Path
 
-from adda.modulemap import is_exempt, load_map
-from adda.sync import source_files
+from adda.modulemap import is_exempt, load_include, load_map
+from adda.sync import source_roots
 
 
 # Source discovery is imported, never reimplemented here. This function and
@@ -133,8 +137,19 @@ def audit_report(repo: Path, adda_dir: Path) -> tuple[list[dict], list]:
 
     # 3) source escaping the map entirely — an explicit map means a new file is
     #    unmapped, and unmapped would otherwise mean silently unenforced.
-    for src in source_files(repo):
+    mapped, excluded = source_roots(repo, load_include(adda_dir))
+    for src in mapped:
         if src not in mapping and not is_exempt(src, exempt):
             findings.append({"item": src, "issue": "code unmapped", "severity": "medium"})
+
+    # 6) roots discovery chose not to map. Not a finding — nothing is drifting —
+    #    but never silent either: the package heuristic is a guess, and when it
+    #    guesses wrong a whole directory of code leaves enforcement with no
+    #    signal at all (BUG-ADDA-020). DEC-ADDA-009 keeps the guess and prints it.
+    for path, reason in excluded:
+        skipped.append(
+            f"not mapped: {path}/ ({reason}) - treated as examples, not a package. "
+            f'Add "{path}" to "include" in MODULE_MAP.json to enforce docs for it.'
+        )
 
     return findings, skipped

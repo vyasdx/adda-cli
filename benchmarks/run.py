@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from adda.evaluate import evaluate          # noqa: E402
 from adda.okf import compile_okf            # noqa: E402
-from adda.sync import discover_modules, module_map_json   # noqa: E402
+from adda.sync import discover_modules, module_map_json, source_roots  # noqa: E402
 
 
 def _sha(repo: Path) -> str:
@@ -52,6 +52,9 @@ def measure(repo: Path) -> dict:
     t0 = time.perf_counter()
     modules = discover_modules(repo)
     mapping = json.loads(module_map_json(repo))
+    # What discovery chose NOT to map matters as much as what it did: an
+    # unreached root is reported as clean, not as unexamined (ADR-0009).
+    _, excluded = source_roots(repo)
     elapsed = time.perf_counter() - t0
 
     docs = list(mapping["map"].values())
@@ -62,6 +65,8 @@ def measure(repo: Path) -> dict:
         "mapped": len(docs),
         "exempt": len(mapping["exempt"]),
         "collisions": len(docs) - len(set(docs)),
+        "skipped": sum(int(reason.split()[0]) for _, reason in excluded),
+        "skipped_roots": [path for path, _ in excluded],
         "seconds": round(elapsed, 2),
         "load_bearing": None,
         "overall": None,
@@ -79,16 +84,17 @@ def measure(repo: Path) -> dict:
 
 def render(rows: list) -> str:
     out = [
-        "| repo | commit | modules | mapped | exempt | collisions | time | load-bearing | overall | payload cut |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| repo | commit | modules | mapped | exempt | skipped | collisions | time | load-bearing | overall | payload cut |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         fid = f'{r["load_bearing"]}%' if r["load_bearing"] is not None else "n/a"
         ov = f'{r["overall"]}%' if r["overall"] is not None else "n/a"
         pc = f'{r["payload_cut"]}%' if r["payload_cut"] is not None else "n/a"
+        skip = f'{r["skipped"]} ({", ".join(r["skipped_roots"])})' if r["skipped"] else "0"
         out.append(
             f'| {r["repo"]} | `{r["sha"]}` | {r["modules"]} | {r["mapped"]} | {r["exempt"]} '
-            f'| {r["collisions"]} | {r["seconds"]}s | {fid} | {ov} | {pc} |'
+            f'| {skip} | {r["collisions"]} | {r["seconds"]}s | {fid} | {ov} | {pc} |'
         )
     return "\n".join(out)
 

@@ -275,7 +275,15 @@ def sync(
     """Derive an ARCHITECTURE skeleton (or, with --map, the code->doc map)."""
     from adda.sync import module_map_json
 
-    text = module_map_json(repo) if map_ else skeleton_markdown(repo)
+    include = None
+    if map_ and out is not None and out.is_file():
+        # Regenerating must not silently re-drop roots the user opted back in.
+        try:
+            include = json.loads(out.read_text(encoding="utf-8")).get("include") or None
+        except (OSError, ValueError):
+            include = None  # unreadable or not a map: regenerate from scratch
+
+    text = module_map_json(repo, include=include) if map_ else skeleton_markdown(repo)
     label = "MODULE_MAP" if map_ else "skeleton"
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)

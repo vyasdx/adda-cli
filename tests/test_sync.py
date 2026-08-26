@@ -195,3 +195,104 @@ def test_python_root_without_init_is_examples_even_with_stray_js(tmp_path):
 
     mapping = json.loads(module_map_json(tmp_path))["map"]
     assert mapping == {"lib/core.py": "docs/modules/lib/core.md"}
+
+
+def test_flat_layout_repo_is_not_a_silent_no_op(tmp_path):
+    """BUG-ADDA-018: a repo with no package directory mapped NOTHING.
+
+    `discover_modules` walks directories only, so `main.py`/`utils.py` at the
+    root produced an empty map — and an empty map makes `audit` report "No doc
+    drift" over a project with zero docs. The worst possible failure for a
+    drift detector: confident silence.
+    """
+    (tmp_path / "main.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "utils.py").write_text("y = 2\n", encoding="utf-8")
+    mapping = json.loads(module_map_json(tmp_path))["map"]
+    assert mapping == {
+        "main.py": "docs/modules/main.md",
+        "utils.py": "docs/modules/utils.md",
+    }
+
+
+def test_loose_file_beside_a_package_is_mapped(tmp_path):
+    """BUG-ADDA-019: `src/loose.py` was invisible while `src/pkg/foo.py` mapped.
+
+    Also guards the interaction that would have re-hidden it: the package
+    heuristic drops non-package Python roots once any package exists, and loose
+    files can never carry an `__init__.py`, so they must be exempt from it.
+    """
+    pkg = tmp_path / "src" / "pkg"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "foo.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "src" / "loose.py").write_text("y = 2\n", encoding="utf-8")
+
+    mapping = json.loads(module_map_json(tmp_path))["map"]
+    assert "src/loose.py" in mapping, "loose source beside a package went unmapped"
+    assert mapping["src/loose.py"] == "docs/modules/loose.md"
+    assert "src/pkg/foo.py" in mapping
+
+
+def test_dropped_python_root_is_reported_and_can_be_included(tmp_path):
+    """BUG-ADDA-020 / DEC-ADDA-009: one `__init__.py` drops unrelated roots.
+
+    The heuristic stays — without it fastapi buries real findings under 369
+    tutorial snippets — but it must announce what it dropped, and `include`
+    must overrule it. A guess that cannot be seen or overridden is the silent
+    pass this tool exists to prevent.
+    """
+    from adda.sync import source_roots
+
+    pkg = tmp_path / "pkgmod"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "core.py").write_text("x = 1\n", encoding="utf-8")
+    scripts = tmp_path / "toolscripts"
+    scripts.mkdir()
+    (scripts / "build.py").write_text("y = 2\n", encoding="utf-8")
+
+    files, excluded = source_roots(tmp_path)
+    assert "toolscripts/build.py" not in files          # the heuristic still fires
+    assert [p for p, _ in excluded] == ["toolscripts"]  # but it is no longer silent
+
+    files, excluded = source_roots(tmp_path, ["toolscripts"])
+    assert "toolscripts/build.py" in files
+    assert excluded == []
+
+
+def test_map_round_trips_include_so_regeneration_keeps_it(tmp_path):
+    """An override that a routine `sync --map` erases is not an override."""
+    (tmp_path / "pkgmod").mkdir()
+    (tmp_path / "pkgmod" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "toolscripts").mkdir()
+    (tmp_path / "toolscripts" / "build.py").write_text("y = 2\n", encoding="utf-8")
+
+    out = tmp_path / "adda" / "MODULE_MAP.json"
+    out.parent.mkdir()
+    out.write_text(module_map_json(tmp_path, include=["toolscripts"]), encoding="utf-8")
+    assert json.loads(out.read_text(encoding="utf-8"))["include"] == ["toolscripts"]
+
+    res = runner.invoke(app, ["sync", str(tmp_path), "--map", "--out", str(out)])
+    assert res.exit_code == 0
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["include"] == ["toolscripts"]
+    assert "toolscripts/build.py" in data["map"]
+
+
+def test_root_tooling_config_is_not_a_documentable_module(tmp_path):
+    """Mapping loose root files (BUG-ADDA-018) exposed the repo root's config.
+
+    `.eslintrc.js` and `rollup.config.js` are declarations, not behaviour;
+    demanding a module doc for each is the kind of noise that gets a drift
+    report ignored — which is a silent pass wearing a different hat.
+    """
+    (tmp_path / "main.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / ".eslintrc.js").write_text("module.exports = {}\n", encoding="utf-8")
+    (tmp_path / "rollup.config.js").write_text("export default {}\n", encoding="utf-8")
+    (tmp_path / "setup.py").write_text("from setuptools import setup\n", encoding="utf-8")
+    (tmp_path / "conftest.py").write_text("\n", encoding="utf-8")
+
+    data = json.loads(module_map_json(tmp_path))
+    assert list(data["map"]) == ["main.py"]
+    # packaging/test plumbing is EXCUSED in writing, not quietly dropped
+    assert data["exempt"] == ["conftest.py", "setup.py"]
