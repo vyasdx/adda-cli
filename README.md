@@ -2,11 +2,10 @@
 <!-- Coded by - Claude Code -->
 
 <p align="center">
-  <img src="assets/logo.png" alt="ADDA — a hooded sentinel guarding memory, with the adda wordmark and the tagline Drift Breaker Mode" width="520">
-</p>
-
-<p align="center">
-  <i>Your code changed. Your docs should know.</i>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+    <img src="assets/banner-light.svg" alt="adda — two commit histories side by side: the code history running on to a green HEAD, the doc history stopping early and continuing as a dashed red line. Tagline: your code changed, your docs should know." width="720">
+  </picture>
 </p>
 
 <p align="center">
@@ -19,6 +18,12 @@
   <img alt="tests 84 passing" src="https://img.shields.io/badge/tests-84%20passing-3b6d11">
   <img alt="OKF v0.2" src="https://img.shields.io/badge/OKF-v0.2-534ab7">
   <img alt="provider-agnostic" src="https://img.shields.io/badge/LLM-provider--agnostic-0f6e56">
+</p>
+
+<p align="center">
+  <a href="https://adda-cli.vercel.app"><b>adda-cli.vercel.app</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://pypi.org/project/adda/">pip install adda</a>
 </p>
 
 ---

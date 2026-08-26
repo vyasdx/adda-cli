@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="ADDA — your code changed, your docs should know">
+  <style>
+    .wm{font:700 128px "IBM Plex Sans",Segoe UI,Helvetica,Arial,sans-serif;letter-spacing:12px;fill:#e8eef5}
+    .tag{font:400 27px "IBM Plex Sans",Segoe UI,Helvetica,Arial,sans-serif;fill:#93a1b1}
+    .lbl{font:500 19px "IBM Plex Mono",Consolas,monospace;fill:#5f6b7a;letter-spacing:1px}
+  </style>
+
+  <!-- the mechanism, drawn small: two histories, one stops moving -->
+  <g transform="translate(76,96)">
+    <line x1="0" y1="0" x2="212" y2="0" stroke="#3d4a59" stroke-width="3"/>
+    <circle cx="0"   cy="0" r="8"  fill="#3d4a59"/>
+    <circle cx="68"  cy="0" r="8"  fill="#3d4a59"/>
+    <circle cx="136" cy="0" r="8"  fill="#3d4a59"/>
+    <circle cx="212" cy="0" r="11" fill="#3fb950"/>
+
+    <line x1="0" y1="104" x2="68" y2="104" stroke="#3d4a59" stroke-width="3"/>
+    <line x1="68" y1="104" x2="212" y2="104" stroke="#4a2626" stroke-width="3" stroke-dasharray="7 9"/>
+    <circle cx="0"  cy="104" r="8"  fill="#3d4a59"/>
+    <circle cx="68" cy="104" r="11" fill="#f85149"/>
+
+    <text class="lbl" x="0" y="-26">code</text>
+    <text class="lbl" x="0" y="146">docs</text>
+  </g>
+
+  <text class="wm"  x="372" y="150">adda</text>
+  <text class="tag" x="378" y="196">Your code changed. Your docs should know.</text>
+  <text class="lbl" x="378" y="234" fill="#5f6b7a">documentation drift, detected from git ancestry</text>
+</svg>
