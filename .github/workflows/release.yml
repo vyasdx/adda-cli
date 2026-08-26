@@ -22,6 +22,12 @@ permissions:
 
 jobs:
   publish:
+    # This file is the SOURCE in the working repo and only executable in the
+    # mirror. Without this, tagging a release in the working repo would start a
+    # publish that fails at the OIDC handshake - safe, because PyPI trusts only
+    # the mirror, but a confusing red run for a thing that was never allowed to
+    # happen. Refusing by name is clearer than being refused by PyPI.
+    if: github.repository == 'vyasdx/adda-cli'
     runs-on: ubuntu-latest
     permissions:
       id-token: write     # the OIDC token that replaces an API token

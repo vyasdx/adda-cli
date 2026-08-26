@@ -4,7 +4,7 @@
 # Current State
 
 updated: 2026-08-18
-summary: v0.3.0 ships the enforcement layer — `sync --map` (MODULE_MAP.json), `audit` (repo-wide doc-layer drift sweep) and `hook` (commit-scoped pre-commit doc gate) — and ADDA dogfoods it on its own repo (ENH-ADDA-007, Task 10 of the v0.3 build).
+summary: v0.4.0 makes every check say what it could not determine. Discovery reports the source roots it deliberately skipped instead of leaving them silently unenforced (ADR-0009), `adda eval` returns n/a rather than a confident number over an unauthored scaffold, and the README states the limit of ancestry-based staleness rather than letting a user find it (ADR-0010). Flat-layout repos and loose files beside a package are mapped for the first time. Packaging and the public mirror are both allowlisted and proven in CI.
 
 ## Notes
 - Twelve commands; 67/67 tests pass. OKF schema locked at v0.2 (ADR-0005), unchanged by v0.3.

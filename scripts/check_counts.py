@@ -10,6 +10,10 @@ project's entire thesis pointed at itself.
 Two counts are checked:
 
 - the tests badge in README.md, against what pytest actually collects
+- the version, which is written by hand in four places: `pyproject.toml`,
+  `src/adda/__init__.py`, `adda/VERSION.md` and the README badge. A release
+  publishes an immutable version number, so a disagreement between them is
+  worse than a stale badge
 - any `<dir>/status.md` that claims "N open work items", against the `issues.md`
   beside it. Discovered by glob rather than by naming a directory, so this file
   stays publishable and works in any repo that keeps a tracker that way.
@@ -58,6 +62,35 @@ def check_badge(actual: int) -> list:
     ]
 
 
+def check_version() -> list:
+    """pyproject is the source of truth; three other files restate it by hand.
+
+    `src/adda/__init__.py` already drifted once and shipped in a release
+    (BUG-ADDA-006). A version is the one number that cannot be corrected after
+    the fact, because PyPI will not let a version be reused.
+    """
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    # Plain-text read: tomllib is 3.11+, and this must run on the 3.10 floor.
+    truth = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M).group(1)
+
+    others = {
+        "src/adda/__init__.py": r'__version__\s*=\s*"([^"]+)"',
+        "adda/VERSION.md": r"^version:\s*(\S+)",
+        "README.md": r"badge/version-([0-9][^-]*)-",
+    }
+    problems = []
+    for rel, pattern in others.items():
+        path = ROOT / rel
+        if not path.is_file():
+            continue
+        m = re.search(pattern, path.read_text(encoding="utf-8"), re.M)
+        if not m:
+            problems.append(f"{rel}: no version found - it was renamed or removed")
+        elif m.group(1) != truth:
+            problems.append(f"{rel} says {m.group(1)}, pyproject says {truth}")
+    return problems
+
+
 def check_open_items() -> list:
     """Cross-check every tracker that publishes an open-item count.
 
@@ -96,13 +129,13 @@ def check_open_items() -> list:
 
 def main() -> int:
     actual = collected_tests()
-    problems = check_badge(actual) + check_open_items()
+    problems = check_badge(actual) + check_version() + check_open_items()
     if problems:
         print("Stale published counts:")
         for p in problems:
             print("  " + p)
         return 1
-    print(f"counts current: {actual} tests")
+    print(f"counts current: {actual} tests, version consistent")
     return 0
 
 

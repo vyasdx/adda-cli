@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img alt="version 0.3.0" src="https://img.shields.io/badge/version-0.3.0-1d9e75">
+  <img alt="version 0.4.0" src="https://img.shields.io/badge/version-0.4.0-1d9e75">
   <img alt="python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-185fa5">
   <img alt="tests 84 passing" src="https://img.shields.io/badge/tests-84%20passing-3b6d11">
   <img alt="OKF v0.2" src="https://img.shields.io/badge/OKF-v0.2-534ab7">
@@ -36,15 +36,12 @@ have no mechanism to notice when what they wrote stopped being true.
 No setup, no authored documents, nothing to fill in first:
 
 ```bash
-git clone https://github.com/vyasdx/adda-cli && pip install -e adda-cli
+pip install adda
 
 cd /your/project
 adda sync . --map --out adda/MODULE_MAP.json   # route each code path to its doc
 adda audit .                                   # what has drifted?
 ```
-
-> **Not on PyPI yet**, so `pip install adda` will not work — install from source
-> as above. Packaging is tracked as ENH-ADDA-019.
 
 ```
 Doc drift detected: 2 finding(s)
@@ -160,8 +157,14 @@ pull it back under enforcement.
 ## Install
 
 ```bash
-pip install -e .
-pip install -e ".[headroom]"   # optional compression (heavy; not required)
+pip install adda
+pip install "adda[headroom]"   # optional compression (heavy; not required)
+```
+
+From a clone instead, for development:
+
+```bash
+pip install -e ".[dev]"
 ```
 
 Installs the `adda` console script.
@@ -215,7 +218,7 @@ python benchmarks/run.py . ../flask ../requests ../fastapi ../django ../date-fns
 
 | repo | commit | modules | mapped | exempt | skipped | collisions | time | load-bearing | overall | payload cut |
 |---|---|---|---|---|---|---|---|---|---|---|
-| ADDA | `781b178` | 1 | 11 | 1 | 0 | 0 | 0.01s | **100.0%** | 87.5% | 44.3% |
+| ADDA | `v0.4.0` | 1 | 11 | 1 | 0 | 0 | 0.01s | **100.0%** | 87.5% | 46.9% |
 | flask | `d318b68` | 1 | 21 | 3 | 0 | 0 | 0.01s | n/a | n/a | n/a |
 | requests | `5460f46` | 1 | 18 | 1 | 0 | 0 | 0.01s | n/a | n/a | n/a |
 | fastapi | `9a8a13f` | 2 | 41 | 7 | 458 (`docs_src`) | 0 | 0.26s | n/a | n/a | n/a |
@@ -225,8 +228,9 @@ python benchmarks/run.py . ../flask ../requests ../fastapi ../django ../date-fns
 Commit SHAs are recorded because otherwise the table is reproducible mechanically
 but not in time — running it next month benchmarks different code. That applies
 to ADDA's own row too: its fidelity and payload figures move as its architecture
-memory grows, so they describe this repo at that commit rather than a fixed
-property of the tool.
+memory grows, so they describe this repo at that point rather than a fixed
+property of the tool. Its row is pinned to a release tag rather than a commit
+for that reason — a tag is a thing you can check out and reproduce.
 
 **Zero collisions across 2,066 mapped files.** That number is the point: a doc path
 that two code paths share is a module reported as documented while having no
