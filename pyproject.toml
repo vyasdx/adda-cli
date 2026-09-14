@@ -41,8 +41,10 @@ dependencies = [
 # every install of a tool that makes no inference calls (BUG-ADDA-012).
 anthropic = ["anthropic>=0.39"]
 headroom = ["headroom-ai"]
-dev = ["pytest>=8"]
-all = ["anthropic>=0.39", "headroom-ai", "pytest>=8"]
+# ruff is pinned here, not in ci.yml, so local and CI cannot disagree. A fresh
+# clone that installs [dev] can run exactly the lint CI runs (ENH-ADDA-025).
+dev = ["pytest>=8", "ruff==0.14.5"]
+all = ["anthropic>=0.39", "headroom-ai", "pytest>=8", "ruff==0.14.5"]
 
 [project.scripts]
 adda = "adda.cli:app"

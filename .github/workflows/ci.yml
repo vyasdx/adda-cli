@@ -47,10 +47,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      # ruff comes from the [dev] extra installed above, not a second pinned line
+      # here. Two pins is two numbers to drift, which is the failure this repo
+      # keeps finding in itself (ENH-ADDA-025).
       - name: Lint (ruff)
-        run: |
-          pip install ruff==0.14.5
-          ruff check .
+        run: ruff check .
 
       - name: Tests
         run: python -m pytest -q
