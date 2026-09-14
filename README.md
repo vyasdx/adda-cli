@@ -249,10 +249,12 @@ gate run automatically, not only when someone remembers to type `adda audit`.
 ## Numbers
 
 Measured 2026-08-26 by `benchmarks/run.py` against real repositories ADDA did not
-design. Reproduce with:
+design. The harness vendors nothing and takes repo paths as arguments, so clone
+the five at the commits in the table first. Any layout works; the command below
+assumes a sibling `benchmark-repos/` directory:
 
 ```bash
-python benchmarks/run.py . ../flask ../requests ../fastapi ../django ../date-fns
+python benchmarks/run.py . ../benchmark-repos/flask ../benchmark-repos/requests ../benchmark-repos/fastapi ../benchmark-repos/django ../benchmark-repos/date-fns
 ```
 
 | repo | commit | modules | mapped | exempt | skipped | collisions | time | load-bearing | overall | payload cut |
