@@ -7,6 +7,7 @@
     "src/adda/doctor.py": "docs/modules/adda/doctor.md",
     "src/adda/evaluate.py": "docs/modules/adda/evaluate.md",
     "src/adda/hook.py": "docs/modules/adda/hook.md",
+    "src/adda/memory.py": "docs/modules/adda/memory.md",
     "src/adda/modulemap.py": "docs/modules/adda/modulemap.md",
     "src/adda/okf.py": "docs/modules/adda/okf.md",
     "src/adda/refs.py": "docs/modules/adda/refs.md",

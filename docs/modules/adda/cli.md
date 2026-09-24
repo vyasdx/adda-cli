@@ -5,7 +5,7 @@
 
 Last verified: 2026-09-24
 
-**Purpose** - ADDA's only entrypoint - the Typer app that wires the thirteen commands to the library modules.
+**Purpose** - ADDA's only entrypoint - the Typer app that wires the fourteen commands to the library modules.
 
 ## Commands
 
@@ -21,6 +21,7 @@ Last verified: 2026-09-24
 | `diff [path]` | report documented-vs-actual module drift | `diff.diff_report` |
 | `audit [path] [--json] [--refs]` | doc-layer drift: missing, stale, unmapped, orphaned docs; with `--refs`, also code names and paths that docs and instruction files cite but no longer exist | `audit.audit_report`, `refs.refs_report`, `refs.instructions_report` |
 | `eval [path] [--json]` | rehydration fidelity % | `evaluate.evaluate` |
+| `memory <dir> [--index] [--json]` | audit an agent's memory directory: notes not indexed, dangling index entries or `[[links]]`, notes indexed twice, one fact recorded twice; exit 1 on any finding | `memory.memory_report` |
 | `doctor [path]` | prove the commit gate is on: hook in the directory git reads, runs the ADDA gate, interpreter exists and imports adda, map maps something, `ADDA_SKIP` unset; exit 1 on any failure | `doctor.diagnose` |
 | `hook run [path]` | block the commit when staged code is missing its staged doc | `hook.check_staged`, `hook.staged_paths` |
 | `hook install [path] [--force]` | write `pre-commit` where git reads hooks (`.git/hooks`, or `core.hooksPath`), delegating to `hook run`; refuses to overwrite without `--force` | `hook.HOOK_STUB` |
@@ -37,6 +38,7 @@ Last verified: 2026-09-24
 
 ## Change Log (newest first)
 
+- [2026-09-24] ENH-ADDA-029 - added `memory` · agent memory drifts like docs (BUG-ADDA-024, RF-ADDA-009, both found by hand). Prints what it checked, one line per finding, `--json` for scripts; a path that is not a directory exits 1 with a clear message.
 - [2026-09-24] BUG-ADDA-027 - `hook install` asks `hook.hooks_dir` where git reads hooks instead of assuming `.git/hooks`, creates it if needed, names a custom `core.hooksPath` in its output and points at `adda doctor` · a husky-style repo got a gate git never ran.
 - [2026-09-24] ENH-ADDA-030 - added `doctor` · the gate fails open and is never cloned, so a broken or absent gate looked exactly like a working one. Prints one `[ ok ]`/`[FAIL]`/`[ -- ]` line per check and a count line; exits 1 on any failure.
 - [2026-09-24] ENH-ADDA-028 - `sync --map` passes the whole previous map to `module_map_json`, not just `include`, and ignores a previous file that is valid JSON but not an object; `audit --refs` passes `modulemap.load_instructions` to `instructions_report` · settings the generator does not own now survive a regenerate, which is what makes a configurable instruction-file list safe.

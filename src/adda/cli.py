@@ -436,6 +436,38 @@ def eval_cmd(
 
 
 @app.command()
+def memory(
+    directory: Path = typer.Argument(..., help="Agent memory directory: markdown notes plus an index."),
+    index: str = typer.Option("MEMORY.md", "--index", help="The index file the agent loads first."),
+    json_out: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """Audit an agent's memory: every note indexed once, links resolve, no fact recorded twice."""
+    from adda.memory import memory_report
+
+    if not directory.is_dir():
+        typer.secho(f"{directory} is not a directory.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    findings, skipped, stats = memory_report(directory, index)
+    if json_out:
+        typer.echo(json.dumps({"findings": findings, "skipped": skipped, "stats": stats}, indent=2))
+    else:
+        for s in skipped:
+            typer.secho(f"[skipped] {s}", fg=typer.colors.YELLOW)
+        typer.echo(
+            f"[memory] checked {stats['files']} file(s), {stats['entries']} index entr(ies), "
+            f"{stats['links']} link(s)"
+        )
+        for f in findings:
+            ref = f" `{f['ref']}`" if "ref" in f else ""
+            colour = typer.colors.RED if f["severity"] == "high" else typer.colors.YELLOW
+            typer.secho(f"  [{f['severity']:<6}] {f['issue']:<22} {f['item']}{ref}", fg=colour)
+        if not findings:
+            typer.secho("No memory drift.", fg=typer.colors.GREEN)
+    if findings:
+        raise typer.Exit(1)
+
+
+@app.command()
 def doctor(
     path: Path = typer.Argument(Path("."), help="Repo root (default: current)."),
 ) -> None:

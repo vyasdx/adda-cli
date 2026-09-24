@@ -23,7 +23,7 @@ rehydrate → audit/enforce.
 
 ## Modules
 
-- cli: Typer entrypoint wiring all thirteen commands. (active) [src/adda/cli.py]
+- cli: Typer entrypoint wiring all fourteen commands. (active) [src/adda/cli.py]
 - okf: OKF pydantic schema + markdown→OKF compiler. (active) [src/adda/okf.py]
 - sentinel: Context Sentinel token gauge + count_tokens fallback. (active) [src/adda/sentinel.py]
 - rehydrate: minimal-OKF emitter (the north-star). (active) [src/adda/rehydrate.py]
@@ -36,3 +36,4 @@ rehydrate → audit/enforce.
 - refs: names and paths cited by module docs and instruction files must still exist, opt-in via `audit --refs` (active) [src/adda/refs.py]
 - hook: pre-commit doc gate (active) [src/adda/hook.py]
 - doctor: proves the commit gate is on - hook where git looks, runnable interpreter, a map that maps something (active) [src/adda/doctor.py]
+- memory: agent-memory audit - every note indexed once, links resolve, no fact recorded twice (active) [src/adda/memory.py]

@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="version 0.4.0" src="https://img.shields.io/badge/version-0.4.0-1d9e75">
   <img alt="python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-185fa5">
-  <img alt="tests 151 passing" src="https://img.shields.io/badge/tests-151%20passing-3b6d11">
+  <img alt="tests 165 passing" src="https://img.shields.io/badge/tests-165%20passing-3b6d11">
   <img alt="OKF v0.2" src="https://img.shields.io/badge/OKF-v0.2-534ab7">
   <img alt="provider-agnostic" src="https://img.shields.io/badge/LLM-provider--agnostic-0f6e56">
 </p>
@@ -241,6 +241,7 @@ adda audit ./my-project --refs     # ...plus: names and paths cited by docs and 
 adda hook install ./my-project     # install a pre-commit gate: blocks staging code without its doc
 adda hook run ./my-project         # what the installed hook invokes (staged-vs-staged, no dates, no LLM)
 adda doctor ./my-project           # prove the gate is on: hook where git looks, runnable, map non-empty (exit 1 if not)
+adda memory ~/.claude/projects/<key>/memory   # agent memory: every note indexed once, links resolve, no fact twice
 ```
 
 `adda init` writes the spec layout: `VERSION.md`, `ARCHITECTURE.md`, `DOMAIN_MODEL.md`,
