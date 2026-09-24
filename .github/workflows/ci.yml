@@ -86,6 +86,18 @@ jobs:
       - name: Doc drift — missing, stale, unmapped or orphaned module docs
         run: adda audit .
 
+      # DEC-ADDA-013 / ADR-0018. `--refs` checks that every name and path a doc
+      # or agent instruction file cites still exists. It runs on every push so a
+      # dead reference is seen the day it appears - but it WARNS rather than
+      # fails: the instruction files carry a block synced in from outside this
+      # repository, and a gate that goes red on text nobody here can change is
+      # how a gate gets bypassed. The plain `audit` step above still fails hard.
+      - name: Cited names and paths (advisory) — audit --refs
+        run: |
+          if ! adda audit . --refs; then
+            echo "::warning title=adda audit --refs::a doc or instruction file cites a name or path that no longer exists (advisory - see the step log)"
+          fi
+
       # `adda eval` prints its numbers and exits 0 by design, so CI has to make
       # the assertion itself. Overall fidelity is expected below 100% (dropping
       # prose is the intended compression trade-off); load-bearing MUST be 100%
