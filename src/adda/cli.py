@@ -19,6 +19,7 @@ from adda.diff import diff_report
 from adda.evaluate import evaluate
 from adda.hook import check_staged, hook_body, staged_paths
 from adda.okf import compile_okf
+from adda.refs import refs_report
 from adda.rehydrate import minimal_okf
 from adda.sentinel import ContextSentinel, count_tokens, limit_for
 from adda.sync import skeleton_markdown
@@ -322,11 +323,22 @@ def audit(
         Path("."), help="Project root (contains adda/ and the code)."
     ),
     json_out: bool = typer.Option(False, "--json", help="Emit the report as JSON."),
+    refs: bool = typer.Option(
+        False, "--refs",
+        help="Also check that every code name a doc cites still exists in the source (opt-in).",
+    ),
 ) -> None:
     """Detect doc-layer drift: missing, stale, unmapped or orphaned module docs."""
     adda_dir = _resolve_adda_dir(path)
+    ref_stats = None
     try:
         findings, skipped = audit_report(adda_dir.parent, adda_dir)
+        if refs:
+            # ENH-ADDA-027 / ADR-0011. Opt-in, so plain `audit` - and every CI
+            # already running it - keeps exactly its five rules and exit code.
+            ref_findings, ref_skipped, ref_stats = refs_report(adda_dir.parent, adda_dir)
+            findings += ref_findings
+            skipped += ref_skipped
     except FileNotFoundError as exc:
         if json_out:
             typer.echo(json.dumps({"error": str(exc), "findings": [], "skipped": []}, indent=2))
@@ -335,19 +347,29 @@ def audit(
         raise typer.Exit(1)
 
     if json_out:
-        typer.echo(json.dumps({"findings": findings, "skipped": skipped}, indent=2))
+        report = {"findings": findings, "skipped": skipped}
+        if ref_stats is not None:
+            report["refs"] = ref_stats
+        typer.echo(json.dumps(report, indent=2))
         raise typer.Exit(1 if findings else 0)
 
     for note in skipped:
         typer.secho(f"[skipped] {note}", fg=typer.colors.YELLOW)
+    if ref_stats is not None:
+        # Always say how much was checked: a rule that looked at nothing must
+        # never read like a clean pass.
+        typer.echo(
+            f"[refs] checked {ref_stats['refs']} code name(s) cited in {ref_stats['docs']} doc(s)"
+        )
     if not findings:
         typer.secho("No doc drift: every mapped code path has a current doc.", fg=typer.colors.GREEN)
         return
     typer.secho(f"Doc drift detected: {len(findings)} finding(s)", fg=typer.colors.RED)
     colors = {"high": typer.colors.RED, "medium": typer.colors.YELLOW, "low": typer.colors.CYAN}
     for f in findings:
+        name = f" `{f['ref']}`" if "ref" in f else ""
         typer.secho(
-            f"  [{f['severity']:<6}] {f['issue']:<14} {f['item']}",
+            f"  [{f['severity']:<6}] {f['issue']:<14} {f['item']}{name}",
             fg=colors.get(f["severity"], typer.colors.WHITE),
         )
     raise typer.Exit(1)

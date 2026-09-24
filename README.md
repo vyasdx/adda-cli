@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="version 0.4.0" src="https://img.shields.io/badge/version-0.4.0-1d9e75">
   <img alt="python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-185fa5">
-  <img alt="tests 84 passing" src="https://img.shields.io/badge/tests-84%20passing-3b6d11">
+  <img alt="tests 103 passing" src="https://img.shields.io/badge/tests-103%20passing-3b6d11">
   <img alt="OKF v0.2" src="https://img.shields.io/badge/OKF-v0.2-534ab7">
   <img alt="provider-agnostic" src="https://img.shields.io/badge/LLM-provider--agnostic-0f6e56">
 </p>
@@ -236,6 +236,7 @@ adda eval ./my-project             # rehydration fidelity %
 
 ```bash
 adda audit ./my-project            # repo-wide doc-layer drift sweep: missing/stale/unmapped/orphaned docs
+adda audit ./my-project --refs     # ...plus: every code name a doc cites must still exist (opt-in)
 adda hook install ./my-project     # install a pre-commit gate: blocks staging code without its doc
 adda hook run ./my-project         # what the installed hook invokes (staged-vs-staged, no dates, no LLM)
 ```
@@ -326,6 +327,16 @@ them.
 So: **ADDA detects the doc nobody touched. It does not detect the doc someone
 touched carelessly.** The first is the common failure and is worth automating.
 The second still needs review, and no ancestry check will ever catch it.
+
+Part of it is mechanical, though, and `adda audit --refs` checks that part: every
+code name a doc cites must still exist somewhere in the source. The first doc
+above is exactly that case — it named a function deleted in the same commit. The
+second is not: it *left out* a function from its public surface, and a check on
+the names a doc cites cannot see a name it never cited. Nor can it catch a doc
+whose names all exist but whose claims about them are wrong; that still needs a
+reader. It is opt-in, skips Change Log sections
+(which exist to name code that is gone), and always prints how many names it
+checked, so an empty result can never pass for a clean one.
 
 Two related boundaries, for completeness:
 

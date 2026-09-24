@@ -33,4 +33,5 @@ rehydrate → audit/enforce.
 - evaluate: rehydration-fidelity metric (`adda eval`). (active) [src/adda/evaluate.py]
 - modulemap: MODULE_MAP.json code->doc routing (active) [src/adda/modulemap.py]
 - audit: doc-layer drift sweep (active) [src/adda/audit.py]
+- refs: cited code names must still exist, opt-in via `audit --refs` (active) [src/adda/refs.py]
 - hook: pre-commit doc gate (active) [src/adda/hook.py]

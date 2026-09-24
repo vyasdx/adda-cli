@@ -3,7 +3,7 @@
 
 # `cli` - `src/adda/cli.py`
 
-Last verified: 2026-08-26
+Last verified: 2026-09-24
 
 **Purpose** - ADDA's only entrypoint - the Typer app that wires the twelve commands to the library modules.
 
@@ -19,7 +19,7 @@ Last verified: 2026-08-26
 | `checkpoint [path] [-m]` | snapshot `STATE/CURRENT.md` into `STATE/checkpoints/<UTC stamp>.md` | - |
 | `sync [repo] [--out] [--map]` | derive an ARCHITECTURE skeleton from the codebase; `--map` emits MODULE_MAP.json instead | `sync.skeleton_markdown` / `sync.module_map_json` |
 | `diff [path]` | report documented-vs-actual module drift | `diff.diff_report` |
-| `audit [path] [--json]` | doc-layer drift: missing, stale, unmapped, orphaned docs | `audit.audit_report` |
+| `audit [path] [--json] [--refs]` | doc-layer drift: missing, stale, unmapped, orphaned docs; with `--refs`, also code names a doc cites that no longer exist | `audit.audit_report`, `refs.refs_report` |
 | `eval [path] [--json]` | rehydration fidelity % | `evaluate.evaluate` |
 | `hook run [path]` | block the commit when staged code is missing its staged doc | `hook.check_staged`, `hook.staged_paths` |
 | `hook install [path] [--force]` | write `.git/hooks/pre-commit`, delegating to `hook run`; refuses to overwrite without `--force` | `hook.HOOK_STUB` |
@@ -35,6 +35,8 @@ Last verified: 2026-08-26
 - **`cli.py` carries `if __name__ == "__main__": app()`.** `hook_install` bakes `"{sys.executable}" -m adda.cli hook run` into the git hook stub (via `hook.hook_body`), so the module must be runnable with `python -m adda.cli`, not only through the installed console-script entry point.
 
 ## Change Log (newest first)
+
+- [2026-09-24] ENH-ADDA-027 - `audit --refs` wires in `refs.refs_report` · opt-in, so plain `audit` keeps its five rules and exit code for every CI already running it. With the flag, findings and skipped notes merge into the same report, JSON gains a `refs` count block, and the text output always prints how many names were checked, so a rule that looked at nothing never reads as a clean pass.
 
 - [2026-08-26] BUG-ADDA-021 - `adda eval` prints `n/a` with the reason when no architecture file has been authored, and a `[partial]` line naming the scaffold files still unwritten when only some have · a fidelity score over memory nobody wrote is not a low score, it is not a score at all.
 - [2026-08-26] DEC-ADDA-009 - `sync --map --out <path>` reads the existing file's `include` list and carries it forward · an override a routine regeneration erases is not an override.
