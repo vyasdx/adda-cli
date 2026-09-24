@@ -19,6 +19,7 @@ from adda.diff import diff_report
 from adda.evaluate import evaluate
 from adda.hook import check_staged, hook_body, staged_paths
 from adda.okf import compile_okf
+from adda.modulemap import load_instructions
 from adda.refs import instructions_report, refs_report
 from adda.rehydrate import minimal_okf
 from adda.sentinel import ContextSentinel, count_tokens, limit_for
@@ -276,15 +277,21 @@ def sync(
     """Derive an ARCHITECTURE skeleton (or, with --map, the code->doc map)."""
     from adda.sync import module_map_json
 
-    include = None
+    previous = {}
     if map_ and out is not None and out.is_file():
-        # Regenerating must not silently re-drop roots the user opted back in.
+        # Regenerating must not silently re-drop roots the user opted back in,
+        # nor any other setting the generator does not own (ENH-ADDA-028).
         try:
-            include = json.loads(out.read_text(encoding="utf-8")).get("include") or None
+            previous = json.loads(out.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            include = None  # unreadable or not a map: regenerate from scratch
+            previous = {}  # unreadable: regenerate from scratch
+        if not isinstance(previous, dict):
+            previous = {}  # valid JSON but not a map: same
 
-    text = module_map_json(repo, include=include) if map_ else skeleton_markdown(repo)
+    text = (
+        module_map_json(repo, include=previous.get("include") or None, keep=previous)
+        if map_ else skeleton_markdown(repo)
+    )
     label = "MODULE_MAP" if map_ else "skeleton"
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -337,8 +344,11 @@ def audit(
             # ENH-ADDA-027 / ADR-0011. Opt-in, so plain `audit` - and every CI
             # already running it - keeps exactly its five rules and exit code.
             ref_findings, ref_skipped, ref_stats = refs_report(adda_dir.parent, adda_dir)
-            # ENH-ADDA-024 / ADR-0012: the instruction files agents read first.
-            inst_findings, inst_skipped, inst_stats = instructions_report(adda_dir.parent)
+            # ENH-ADDA-024 / ADR-0012: the instruction files agents read first,
+            # plus any a project names itself (ENH-ADDA-028 / ADR-0013).
+            inst_findings, inst_skipped, inst_stats = instructions_report(
+                adda_dir.parent, load_instructions(adda_dir)
+            )
             findings += ref_findings + inst_findings
             skipped += ref_skipped + inst_skipped
     except FileNotFoundError as exc:

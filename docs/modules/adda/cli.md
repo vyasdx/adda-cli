@@ -36,6 +36,7 @@ Last verified: 2026-09-24
 
 ## Change Log (newest first)
 
+- [2026-09-24] ENH-ADDA-028 - `sync --map` passes the whole previous map to `module_map_json`, not just `include`, and ignores a previous file that is valid JSON but not an object; `audit --refs` passes `modulemap.load_instructions` to `instructions_report` · settings the generator does not own now survive a regenerate, which is what makes a configurable instruction-file list safe.
 - [2026-09-24] ENH-ADDA-024 - `audit --refs` also runs `refs.instructions_report` · JSON gains an `instructions` count block beside `refs`, and the text output adds a line stating how many names and paths were checked in how many instruction files, and how many path-like spans did not resolve and were left unchecked. Plain `audit` is unchanged.
 
 - [2026-09-24] ENH-ADDA-027 - `audit --refs` wires in `refs.refs_report` · opt-in, so plain `audit` keeps its five rules and exit code for every CI already running it. With the flag, findings and skipped notes merge into the same report, JSON gains a `refs` count block, and the text output always prints how many names were checked, so a rule that looked at nothing never reads as a clean pass.

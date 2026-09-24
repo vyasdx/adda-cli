@@ -52,11 +52,25 @@ def load_include(adda_dir: Path) -> list[str]:
     loud failure for a missing map, and duplicating it here would make every
     caller handle the same error twice.
     """
+    return _load_list(adda_dir, "include")
+
+
+def load_instructions(adda_dir: Path) -> list[str]:
+    """Extra instruction files for `audit --refs` to read (ENH-ADDA-028).
+
+    The conventional files are found without configuration; this list is for
+    the ones only a project knows about, such as an `intent.md`. It lives in
+    the map because `sync --map` now carries over keys it does not generate.
+    """
+    return _load_list(adda_dir, "instructions")
+
+
+def _load_list(adda_dir: Path, key: str) -> list[str]:
     target = adda_dir / MAP_FILENAME
     if not target.is_file():
         return []
     data = json.loads(target.read_text(encoding="utf-8"))
-    return [_norm(p) for p in (data.get("include") or [])]
+    return [_norm(p) for p in (data.get(key) or [])]
 
 
 def is_exempt(path: str, exempt: list[str]) -> bool:

@@ -28,6 +28,7 @@ import keyword
 import os
 import re
 import subprocess
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 from adda.modulemap import load_map
@@ -101,6 +102,34 @@ def _live_lines(text: str):
         yield number, line
 
 
+# A definition at the start of a line inside a fenced example: `def`/`class`/
+# `function`/`const`/`let`/`var NAME`, or `NAME:` / `NAME =` (a field or an
+# assignment - `==` is a comparison, not a definition).
+_DEFINES = re.compile(
+    r"^\s*(?:(?:async\s+)?def|class|function|const|let|var)\s+([A-Za-z_]\w*)"
+    r"|^\s*([A-Za-z_]\w*)\s*(?::(?!:)|=(?!=))"
+)
+
+
+def _example_defs(text: str) -> set[str]:
+    """Names the doc's own fenced examples define (BUG-ADDA-026).
+
+    Prose explaining an example names what the example defines - fastapi's
+    README defines `is_offer` in a model, then describes it. That is a claim
+    about the example, not the code. Only definitions count: a name an example
+    merely *uses* is still checked, so a stale example calling deleted code
+    cannot excuse the prose that cites it.
+    """
+    defs, in_fence = set(), False
+    for line in text.splitlines():
+        if _FENCE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence and (m := _DEFINES.match(line)):
+            defs.add(m.group(1) or m.group(2))
+    return defs
+
+
 def extract_refs(text: str) -> list[tuple[int, str]]:
     """(line number, name) for every code name cited on a live line."""
     return [
@@ -158,9 +187,10 @@ def refs_report(repo: Path, adda_dir: Path) -> tuple[list[dict], list, dict]:
             unreadable.append(doc)
             continue
         stats["docs"] += 1
+        local = _example_defs(text)
         for line, name in extract_refs(text):
             stats["refs"] += 1
-            if name not in names:
+            if name not in names and name not in local:
                 findings.append({
                     "item": f"{doc}:{line}", "issue": "ref missing",
                     "severity": "medium", "ref": name,
@@ -179,12 +209,72 @@ def refs_report(repo: Path, adda_dir: Path) -> tuple[list[dict], list, dict]:
 # The files an agent reads before any code. They describe the whole repo rather
 # than one path, so they are not mapped docs - ancestry against "all the code"
 # would read stale forever. What can be checked mechanically is that the names
-# and paths they cite still exist. No configuration: a key in MODULE_MAP.json
-# would be silently dropped the next time `sync --map` regenerates the map.
+# and paths they cite still exist. The conventional files need no
+# configuration; a project adds its own under `instructions` in MODULE_MAP.json,
+# which `sync --map` carries over since ENH-ADDA-028.
 
-INSTRUCTION_FILES = (
-    "AGENTS.md", "CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md", "README.md",
+# The files each tool documents reading, verified against its official docs on
+# 2026-09-24 (ADR-0014 lists the sources). Patterns are fnmatch, where `*` also
+# crosses `/`, so `.cursor/rules/*.mdc` covers nested rule folders too.
+# Read in any directory: the tools document picking these up below the root.
+_ANY_DIR = (
+    "AGENTS.md", "AGENTS.override.md", "CLAUDE.md", "GEMINI.md",
+    ".cursor/rules/*.mdc", ".cursor/rules/*.md", ".windsurf/rules/*.md", ".devin/rules/*.md",
 )
+# Read at the repository root only.
+_ROOT_ONLY = (
+    "README.md", "AGENT.md", ".rules",
+    ".github/copilot-instructions.md", ".github/instructions/*.instructions.md",
+    ".claude/CLAUDE.md", ".claude/rules/*.md",
+    ".cursorrules", ".windsurfrules",
+    ".clinerules", ".clinerules/*.md", ".cline/rules/*.md",
+    ".roorules", ".roo/rules/*.md", ".roo/rules-*/*.md",
+    ".continue/rules/*.md", ".amazonq/rules/*.md",
+    ".junie/AGENTS.md", ".junie/guidelines.md", ".junie/playbook.md", ".junie/rules/*.md",
+)
+# Dependency, build and cache trees. Unlike the name corpus, docs/ and tests/
+# are searched: a `docs/AGENTS.md` is read by the tools like any other.
+_WALK_SKIP = IGNORE_DIRS - {"tests", "test", "docs", "doc", "scripts", "examples", ".github"}
+
+
+def _convention(rel: str):
+    """The directory whose tools read `rel` as instructions, or None.
+
+    "" for the root. A nested `pkg/AGENTS.md` returns "pkg", so its paths can be
+    resolved from where it sits as well as from the root.
+    """
+    if any(fnmatchcase(rel, p) for p in _ROOT_ONLY + _ANY_DIR):
+        return ""
+    for p in _ANY_DIR:
+        if fnmatchcase(rel, "*/" + p):
+            first = p.split("/")[0]  # `AGENTS.md`, or `.cursor` for a rules folder
+            return rel[: rel.rfind("/" + first + ("/" if "/" in p else ""))]
+    return None
+
+
+def _discover(repo: Path) -> list[tuple[str, str]]:
+    """(file, its directory) for every conventional instruction file, sorted.
+
+    Names match with exact case, as the tools on a case-sensitive runner would
+    see them. Gitignored files are left out: a personal file that exists on one
+    machine would make the same commit pass on CI and fail locally.
+    """
+    found = []
+    for here, dirs, files in os.walk(repo):
+        dirs[:] = [d for d in dirs if d not in _WALK_SKIP]
+        base = Path(here).relative_to(repo).as_posix()
+        for name in files:
+            rel = name if base == "." else f"{base}/{name}"
+            owner = _convention(rel)
+            if owner is not None:
+                found.append((rel, owner))
+    ignored = _ignored_many(repo, [rel for rel, _ in found])
+    return sorted(f for f in found if f[0] not in ignored)
+
+
+def _generic(path: str) -> bool:
+    """Does `path` merely name a convention, e.g. a README listing what tools read?"""
+    return _convention(path) is not None
 
 # Path-shaped: only path characters, and either a slash or a file extension.
 # The character set is also what excludes globs (`*`, `?`, `[`) and
@@ -252,8 +342,27 @@ def _ignored(repo: Path, rel: str) -> bool:
     return out.returncode == 0
 
 
-def instructions_report(repo: Path) -> tuple[list[dict], list, dict]:
+def _ignored_many(repo: Path, rels: list[str]) -> set[str]:
+    """The subset of `rels` that git ignores, in one call. Outside a git repo,
+    or if git fails, nothing is treated as ignored."""
+    if not rels:
+        return set()
+    try:
+        out = subprocess.run(
+            ["git", "check-ignore", "--stdin", "-z"], cwd=repo, capture_output=True,
+            input="\0".join(rels).encode("utf-8"), timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {p for p in out.stdout.decode("utf-8").split("\0") if p}
+
+
+def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:
     """Return (findings, skipped, stats) for the instruction files present.
+
+    `extra` names files a project configured itself. Unlike a conventional file,
+    one that is absent is reported: a typo in the config must not read as
+    "checked, all clean".
 
     A path is checked only when its first segment exists in this repo. Anything
     else - another repository, a file relative to some other directory, a slash
@@ -262,7 +371,15 @@ def instructions_report(repo: Path) -> tuple[list[dict], list, dict]:
     """
     findings, skipped = [], []
     stats = {"files": 0, "refs": 0, "paths": 0, "unresolved": 0}
-    present = [f for f in INSTRUCTION_FILES if (repo / f).is_file()]
+    configured = list(dict.fromkeys(extra))
+    absent = [f for f in configured if not _exists_exact(repo, f)]
+    if absent:
+        skipped.append(
+            f"configured instruction file(s) not found, so not checked: {', '.join(absent)}"
+        )
+    present = _discover(repo)
+    seen = {rel for rel, _ in present}
+    present += [(f, "") for f in configured if f not in absent and f not in seen]
     if not present:
         return findings, skipped, stats
 
@@ -270,7 +387,10 @@ def instructions_report(repo: Path) -> tuple[list[dict], list, dict]:
     if names is None:
         skipped.append("instruction-file name check skipped: no source files found")
     unreadable = []
-    for rel in present:
+    for rel, home in present:
+        # Where a cited path may be anchored: the root, and for a nested file
+        # its own directory too - tools differ, and few document it.
+        bases = [""] + ([home] if home else [])
         try:
             text = (repo / rel).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
@@ -278,9 +398,10 @@ def instructions_report(repo: Path) -> tuple[list[dict], list, dict]:
             continue
         stats["files"] += 1
         if names is not None:
+            local = _example_defs(text)
             for line, name in extract_refs(text):
                 stats["refs"] += 1
-                if name not in names:
+                if name not in names and name not in local:
                     findings.append({
                         "item": f"{rel}:{line}", "issue": "ref missing",
                         "severity": "medium", "ref": name,
@@ -289,12 +410,14 @@ def instructions_report(repo: Path) -> tuple[list[dict], list, dict]:
             # Docs about AI tooling list the conventional instruction files by
             # name, generically. Citing one is not a claim that it exists here -
             # found when ADDA's own README tripped this rule on its first run.
-            generic = path in INSTRUCTION_FILES and not _exists_exact(repo, path)
-            if generic or not _exists_exact(repo, path.split("/")[0]):
+            first = path.split("/")[0]
+            anchored = [f"{b}/{path}" if b else path for b in bases
+                        if _exists_exact(repo, f"{b}/{first}" if b else first)]
+            if not anchored or (_generic(path) and not _exists_exact(repo, path)):
                 stats["unresolved"] += 1
                 continue
             stats["paths"] += 1
-            if not _exists_exact(repo, path) and not _ignored(repo, path):
+            if not any(_exists_exact(repo, p) or _ignored(repo, p) for p in anchored):
                 findings.append({
                     "item": f"{rel}:{line}", "issue": "path missing",
                     "severity": "medium", "ref": path,

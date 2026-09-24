@@ -230,7 +230,7 @@ def source_files(repo: Path, include=None) -> list:
     return source_roots(repo, include)[0]
 
 
-def module_map_json(repo: Path, doc_dir: str = "docs/modules", include=None) -> str:
+def module_map_json(repo: Path, doc_dir: str = "docs/modules", include=None, keep=None) -> str:
     """Derive MODULE_MAP.json content: every source .py -> its module doc.
 
     The doc path MIRRORS the source path (minus a leading `src/`), so
@@ -244,6 +244,11 @@ def module_map_json(repo: Path, doc_dir: str = "docs/modules", include=None) -> 
 
     Reuses `discover_modules` so "what counts as source" has exactly one
     definition across sync, diff and audit.
+
+    `keep` is the previous map: every key this function does not generate is
+    carried over verbatim. Only `include` used to survive, so any other setting
+    (`instructions`, ENH-ADDA-028) vanished on the next routine regenerate and
+    the check it configured stopped running without a word.
     """
     mapping, exempt = {}, []
     for rel in source_files(repo, include):
@@ -254,6 +259,7 @@ def module_map_json(repo: Path, doc_dir: str = "docs/modules", include=None) -> 
         stem_path = rel[4:] if rel.startswith("src/") else rel
         mapping[rel] = f"{doc_dir}/{stem_path.rsplit('.', 1)[0]}.md"
     out = {"map": mapping, "exempt": sorted(exempt)}
+    out.update({k: v for k, v in (keep or {}).items() if k not in out and k != "include"})
     if include:
         # Round-tripped so regenerating the map does not silently re-drop the
         # roots the user deliberately opted back in (DEC-ADDA-009).

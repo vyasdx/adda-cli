@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="version 0.4.0" src="https://img.shields.io/badge/version-0.4.0-1d9e75">
   <img alt="python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-185fa5">
-  <img alt="tests 122 passing" src="https://img.shields.io/badge/tests-122%20passing-3b6d11">
+  <img alt="tests 137 passing" src="https://img.shields.io/badge/tests-137%20passing-3b6d11">
   <img alt="OKF v0.2" src="https://img.shields.io/badge/OKF-v0.2-534ab7">
   <img alt="provider-agnostic" src="https://img.shields.io/badge/LLM-provider--agnostic-0f6e56">
 </p>
@@ -339,8 +339,13 @@ reader. It is opt-in, skips Change Log sections
 checked, so an empty result can never pass for a clean one.
 
 The same flag checks, when present, the files an agent reads before any code —
-`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md` and
-`README.md`. When
+`AGENTS.md`, `CLAUDE.md` and `GEMINI.md` in any directory, the rules folders of
+Cursor, Windsurf, Cline, Roo, Continue, Junie and Amazon Q, Copilot's
+instructions, and `README.md`. Each tool's list comes from its own documentation,
+checked on 2026-09-24. A project adds its own, such as an `intent.md`, by listing them
+under `"instructions"` in `MODULE_MAP.json`; `sync --map` keeps that setting when
+it regenerates the map, and a listed file that does not exist is reported, not
+skipped. When
 the build steps and module list are written in English, a path that no longer
 exists is a broken instruction. Paths it cannot place inside this repository —
 another repo, a filename relative to somewhere else — are counted and printed,

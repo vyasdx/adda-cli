@@ -279,6 +279,30 @@ def test_map_round_trips_include_so_regeneration_keeps_it(tmp_path):
     assert "toolscripts/build.py" in data["map"]
 
 
+def test_map_regeneration_keeps_keys_it_does_not_generate(tmp_path):
+    """ENH-ADDA-028: a setting the generator does not own must survive it.
+
+    Before this, `sync --map` rebuilt the file from `map`, `exempt` and
+    `include` alone, so any other key - such as `instructions` - vanished on
+    the next routine regenerate, and the check it configured stopped running
+    without a word.
+    """
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    out = tmp_path / "adda" / "MODULE_MAP.json"
+    out.parent.mkdir()
+    out.write_text(json.dumps({
+        "map": {"stale.py": "docs/modules/stale.md"}, "exempt": [],
+        "instructions": ["intent.md"], "owner": {"team": "docs"},
+    }), encoding="utf-8")
+
+    res = runner.invoke(app, ["sync", str(tmp_path), "--map", "--out", str(out)])
+    assert res.exit_code == 0
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["instructions"] == ["intent.md"]
+    assert data["owner"] == {"team": "docs"}
+    assert data["map"] == {"app.py": "docs/modules/app.md"}  # generated keys still regenerate
+
+
 def test_root_tooling_config_is_not_a_documentable_module(tmp_path):
     """Mapping loose root files (BUG-ADDA-018) exposed the repo root's config.
 

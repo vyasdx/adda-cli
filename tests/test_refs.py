@@ -401,3 +401,136 @@ def test_listing_the_conventional_instruction_filenames_is_not_a_claim_they_exis
     findings, _, stats = instructions_report(tmp_path)
     assert findings == []
     assert stats["unresolved"] == 3 and stats["paths"] == 0
+
+
+# --- BUG-ADDA-026: names the doc's own example defines ----------------------
+
+
+def test_name_defined_in_the_docs_own_example_is_described_not_claimed(tmp_path):
+    # fastapi's README: a fenced model defines `is_offer`, prose then explains it.
+    readme = (
+        "```Python\nclass Item(BaseModel):\n    is_offer: bool | None = None\n```\n\n"
+        "* Check that it has an optional attribute `is_offer`.\n"
+    )
+    _repo(tmp_path, {"src/app.py": "x = 1\n"}, {"README.md": readme})
+    findings, _, stats = instructions_report(tmp_path)
+    assert findings == [] and stats["refs"] == 1
+
+
+def test_name_the_example_only_uses_is_still_checked(tmp_path):
+    # A stale example calling deleted code must not excuse the prose citing it.
+    readme = "```python\nresult = old_helper()\n```\n\nCall `old_helper()` first.\n"
+    _repo(tmp_path, {"src/app.py": "x = 1\n"}, {"README.md": readme})
+    assert _missing(instructions_report(tmp_path)[0]) == ["old_helper"]
+
+
+def test_module_doc_example_definitions_count_too(tmp_path):
+    doc = "```python\ndef make_widget():\n    ...\n```\n\n`make_widget()` returns a widget.\n"
+    _project(tmp_path, doc)
+    findings, _, _ = refs_report(tmp_path, tmp_path / "adda")
+    assert findings == []
+
+
+# --- ENH-ADDA-028: files a project names itself ----------------------------
+
+
+def test_configured_instruction_file_is_checked_like_the_conventional_ones(tmp_path):
+    _repo(tmp_path, {"src/app.py": ""}, {"intent.md": "# intent\n\nBuild `src/gone.py`.\n"})
+    assert instructions_report(tmp_path)[0] == []  # not conventional: unread by default
+    findings, _, stats = instructions_report(tmp_path, ["intent.md"])
+    assert [(f["item"], f["ref"]) for f in findings] == [("intent.md:3", "src/gone.py")]
+    assert stats["files"] == 1
+
+
+def test_configured_file_that_does_not_exist_is_reported_not_passed(tmp_path):
+    # A typo in the config must not read as "checked, all clean".
+    _repo(tmp_path, {"src/app.py": ""}, {})
+    findings, skipped, stats = instructions_report(tmp_path, ["docs/intent.md"])
+    assert findings == [] and stats["files"] == 0
+    assert any("docs/intent.md" in s for s in skipped)
+
+
+def test_file_both_conventional_and_configured_is_read_once(tmp_path):
+    _repo(tmp_path, {"src/app.py": ""}, {"AGENTS.md": "`src/gone.py`\n"})
+    findings, _, stats = instructions_report(tmp_path, ["AGENTS.md"])
+    assert stats["files"] == 1 and _path_issues(findings) == ["src/gone.py"]
+
+
+def test_other_agents_rule_files_are_read(tmp_path):
+    # Each convention verified against the tool's official docs on 2026-09-24
+    # (Cursor, Windsurf, Copilot path-specific, Cline, Junie) - see ADR-0014.
+    rules = {
+        ".cursor/rules/api.mdc": "---\nalwaysApply: true\n---\nSee `src/gone_a.py`.\n",
+        ".windsurfrules": "`src/gone_b.py`\n",
+        ".github/instructions/py.instructions.md": "`src/gone_c.py`\n",
+        ".clinerules/style.md": "`src/gone_d.py`\n",
+        ".junie/guidelines.md": "`src/gone_e.py`\n",
+    }
+    _repo(tmp_path, {"src/app.py": ""}, rules)
+    findings, _, stats = instructions_report(tmp_path)
+    assert _path_issues(findings) == [f"src/gone_{c}.py" for c in "abcde"]
+    assert stats["files"] == 5
+
+
+def test_nested_agents_file_resolves_paths_from_root_or_its_own_directory(tmp_path):
+    _repo(
+        tmp_path,
+        {"src/app.py": "", "pkg/core.py": "", "pkg/lib/util.py": ""},
+        {"pkg/AGENTS.md": "`core.py` `lib/util.py` `src/app.py` `lib/gone.py`\n"},
+    )
+    findings, _, stats = instructions_report(tmp_path)
+    assert [(f["item"], f["ref"]) for f in findings] == [("pkg/AGENTS.md:1", "lib/gone.py")]
+    assert stats["files"] == 1 and stats["paths"] == 4
+
+
+def test_only_files_tools_read_nested_are_read_nested(tmp_path):
+    # Copilot reads .github/copilot-instructions.md at the root only, and a
+    # nested README is documentation, not an instruction file.
+    _repo(
+        tmp_path,
+        {"src/app.py": ""},
+        {"pkg/README.md": "`src/gone.py`\n", "pkg/.github/copilot-instructions.md": "`src/gone.py`\n"},
+    )
+    findings, _, stats = instructions_report(tmp_path)
+    assert findings == [] and stats["files"] == 0
+
+
+def test_dependency_and_tooling_dirs_are_not_searched(tmp_path):
+    _repo(
+        tmp_path,
+        {"src/app.py": ""},
+        {"node_modules/lib/AGENTS.md": "`src/gone.py`\n", ".venv/pkg/CLAUDE.md": "`src/gone.py`\n"},
+    )
+    assert instructions_report(tmp_path)[2]["files"] == 0
+
+
+def test_gitignored_instruction_file_is_not_checked(tmp_path):
+    # A personal, ignored file exists on one machine only; checking it would
+    # make the same commit pass on CI and fail locally.
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    _repo(tmp_path, {"src/app.py": "", ".gitignore": "local/\n"}, {"local/CLAUDE.md": "`src/gone.py`\n"})
+    assert instructions_report(tmp_path)[2]["files"] == 0
+
+
+def test_filename_case_must_match_the_convention(tmp_path):
+    _repo(tmp_path, {"src/app.py": ""}, {"agents.md": "`src/gone.py`\n"})
+    assert instructions_report(tmp_path)[2]["files"] == 0
+
+
+def test_citing_a_rule_file_convention_is_not_a_claim_it_exists(tmp_path):
+    _repo(
+        tmp_path,
+        {".github/workflows/ci.yml": "on: push\n", "src/app.py": ""},
+        {"README.md": "Copilot also reads `.github/instructions/py.instructions.md`.\n"},
+    )
+    findings, _, stats = instructions_report(tmp_path)
+    assert findings == [] and stats["unresolved"] == 1
+
+
+def test_audit_refs_reads_instruction_files_named_in_the_map(tmp_path):
+    _project(tmp_path, "`compare_commits`\n", extra={"intent.md": "`src/pkg/gone.py`\n"})
+    target = tmp_path / "adda" / MAP_FILENAME
+    data = json.loads(target.read_text(encoding="utf-8"))
+    target.write_text(json.dumps({**data, "instructions": ["intent.md"]}), encoding="utf-8")
+    res = runner.invoke(app, ["audit", str(tmp_path), "--refs"])
+    assert res.exit_code == 1 and "intent.md:1" in res.stdout
