@@ -17,6 +17,21 @@ on:
 permissions:
   contents: read
 
+# ENH-ADDA-026. Pushes land in bursts - a rules sync writes two commits in the
+# same minute - and each one queued a full matrix run testing a tree already
+# superseded. Cancel the older run: main is linear, so testing the newest
+# commit covers the ones before it. Grouped per PR or per ref so unrelated
+# branches never cancel each other.
+#
+# Deliberately NOT paired with a paths-ignore for internal reporting paths,
+# though those pushes are most of this workflow's cost. Two reasons: this file
+# ships to the public repo, where the export's marker scan fails closed on
+# internal names; and these checks are the only guard on those files - the
+# open-item count check and the secret scan both read them.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
