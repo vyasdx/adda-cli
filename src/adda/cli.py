@@ -19,7 +19,7 @@ from adda.diff import diff_report
 from adda.evaluate import evaluate
 from adda.hook import check_staged, hook_body, staged_paths
 from adda.okf import compile_okf
-from adda.refs import refs_report
+from adda.refs import instructions_report, refs_report
 from adda.rehydrate import minimal_okf
 from adda.sentinel import ContextSentinel, count_tokens, limit_for
 from adda.sync import skeleton_markdown
@@ -330,15 +330,17 @@ def audit(
 ) -> None:
     """Detect doc-layer drift: missing, stale, unmapped or orphaned module docs."""
     adda_dir = _resolve_adda_dir(path)
-    ref_stats = None
+    ref_stats = inst_stats = None
     try:
         findings, skipped = audit_report(adda_dir.parent, adda_dir)
         if refs:
             # ENH-ADDA-027 / ADR-0011. Opt-in, so plain `audit` - and every CI
             # already running it - keeps exactly its five rules and exit code.
             ref_findings, ref_skipped, ref_stats = refs_report(adda_dir.parent, adda_dir)
-            findings += ref_findings
-            skipped += ref_skipped
+            # ENH-ADDA-024 / ADR-0012: the instruction files agents read first.
+            inst_findings, inst_skipped, inst_stats = instructions_report(adda_dir.parent)
+            findings += ref_findings + inst_findings
+            skipped += ref_skipped + inst_skipped
     except FileNotFoundError as exc:
         if json_out:
             typer.echo(json.dumps({"error": str(exc), "findings": [], "skipped": []}, indent=2))
@@ -350,6 +352,7 @@ def audit(
         report = {"findings": findings, "skipped": skipped}
         if ref_stats is not None:
             report["refs"] = ref_stats
+            report["instructions"] = inst_stats
         typer.echo(json.dumps(report, indent=2))
         raise typer.Exit(1 if findings else 0)
 
@@ -360,6 +363,11 @@ def audit(
         # never read like a clean pass.
         typer.echo(
             f"[refs] checked {ref_stats['refs']} code name(s) cited in {ref_stats['docs']} doc(s)"
+        )
+        typer.echo(
+            f"[refs] checked {inst_stats['refs']} code name(s) and {inst_stats['paths']} path(s) "
+            f"in {inst_stats['files']} instruction file(s); {inst_stats['unresolved']} path-like "
+            f"span(s) did not resolve inside this repo and were not checked"
         )
     if not findings:
         typer.secho("No doc drift: every mapped code path has a current doc.", fg=typer.colors.GREEN)

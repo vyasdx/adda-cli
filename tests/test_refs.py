@@ -9,12 +9,13 @@ checker that cries wolf teaches its users to stop reading it.
 """
 
 import json
+import subprocess
 
 from typer.testing import CliRunner
 
 from adda.cli import app
 from adda.modulemap import MAP_FILENAME
-from adda.refs import extract_refs, refs_report
+from adda.refs import extract_paths, extract_refs, instructions_report, refs_report
 
 runner = CliRunner()
 
@@ -219,3 +220,184 @@ def test_audit_refs_json_carries_findings_and_counts(tmp_path):
     assert report["refs"] == {"docs": 1, "refs": 1}
     (f,) = [f for f in report["findings"] if f["issue"] == "ref missing"]
     assert f["ref"] == "gone_function"
+
+
+def test_line_saying_a_name_is_gone_is_not_a_claim_that_it_exists(tmp_path):
+    # Same principle as a Change Log, one line wide: naming code to say it was
+    # removed is accurate, not drift.
+    _project(tmp_path, "# core\n\n`old_helper` was removed; use `compare_commits`.\n")
+    findings, _, stats = refs_report(tmp_path, tmp_path / "adda")
+    assert findings == [] and stats["refs"] == 0
+
+
+# --- ENH-ADDA-024: instruction files cite paths and names for the whole repo ---
+#
+# Each test below is one of the 30 naive hits from prototyping this against
+# ADDA's own AGENTS.md, CLAUDE.md and README.md - every one a false positive.
+
+
+def _repo(root, files, instructions):
+    for rel, text in files.items():
+        _write(root, rel, text)
+    for rel, text in instructions.items():
+        _write(root, rel, text)
+
+
+def _path_issues(findings):
+    return sorted(f["ref"] for f in findings if f["issue"] == "path missing")
+
+
+def test_instruction_file_citing_an_existing_path_is_clean(tmp_path):
+    _repo(tmp_path, {"src/app.py": "x = 1\n"}, {"AGENTS.md": "Code lives in `src/app.py`.\n"})
+    findings, skipped, stats = instructions_report(tmp_path)
+    assert findings == [] and skipped == []
+    assert stats == {"files": 1, "refs": 0, "paths": 1, "unresolved": 0}
+
+
+def test_missing_path_inside_the_repo_is_flagged_with_its_line(tmp_path):
+    _repo(tmp_path, {"src/app.py": "x = 1\n"}, {"CLAUDE.md": "# rules\n\nRun `src/gone.py` first.\n"})
+    findings, _, _ = instructions_report(tmp_path)
+    assert _path_issues(findings) == ["src/gone.py"]
+    assert findings[0]["item"] == "CLAUDE.md:3" and findings[0]["severity"] == "medium"
+
+
+def test_path_into_another_repository_is_unresolved_not_missing(tmp_path):
+    _repo(tmp_path, {"src/app.py": "x = 1\n"}, {"AGENTS.md": "Synced from `OtherRepo/specs/RULES.md`.\n"})
+    findings, _, stats = instructions_report(tmp_path)
+    assert findings == [] and stats["unresolved"] == 1 and stats["paths"] == 0
+
+
+def test_brace_list_is_expanded_and_each_member_checked(tmp_path):
+    _repo(
+        tmp_path,
+        {"src/pkg/cli.py": "", "src/pkg/okf.py": ""},
+        {"CLAUDE.md": "Modules: `src/pkg/{cli,okf,hook}.py`.\n"},
+    )
+    findings, _, stats = instructions_report(tmp_path)
+    assert _path_issues(findings) == ["src/pkg/hook.py"]
+    assert stats["paths"] == 3
+
+
+def test_leading_slash_means_repo_root_not_filesystem_root(tmp_path):
+    _repo(tmp_path, {"adda/ARCHITECTURE.md": "# a\n"}, {"CLAUDE.md": "Read `/adda/ARCHITECTURE.md` first.\n"})
+    findings, _, stats = instructions_report(tmp_path)
+    assert findings == [] and stats["paths"] == 1
+
+
+def test_globs_and_placeholders_are_not_paths(tmp_path):
+    _repo(
+        tmp_path,
+        {"docs/modules/a.md": "", "src/app.py": ""},
+        {"AGENTS.md": "Update `docs/modules/*.md` and `log/<today>.md`.\n"},
+    )
+    findings, _, stats = instructions_report(tmp_path)
+    assert findings == [] and stats["paths"] == 0 and stats["unresolved"] == 0
+
+
+def test_slash_commands_and_slashed_words_do_not_resolve_so_are_not_flagged(tmp_path):
+    _repo(tmp_path, {"src/app.py": ""}, {"README.md": "Use `/compact` or `/clear`; score `n/a`.\n"})
+    findings, _, stats = instructions_report(tmp_path)
+    assert findings == [] and stats["unresolved"] == 3
+
+
+def test_path_named_to_say_it_is_retired_is_not_flagged(tmp_path):
+    _repo(
+        tmp_path,
+        {"notes/live.md": ""},
+        {"AGENTS.md": "The old `notes/feed.md` is **RETIRED** - ignore it.\n"},
+    )
+    findings, _, stats = instructions_report(tmp_path)
+    assert findings == [] and stats["paths"] == 0
+
+
+def test_generated_gitignored_file_is_not_missing(tmp_path):
+    # It exists on a working machine and not on a clean CI checkout; the answer
+    # must be the same in both places.
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    _repo(
+        tmp_path,
+        {".gitignore": "out.json\n", "src/app.py": ""},
+        {"CLAUDE.md": "`src/out.json` is generated; regenerate it with the build.\n"},
+    )
+    _write(tmp_path, ".gitignore", "src/out.json\n")
+    findings, _, _ = instructions_report(tmp_path)
+    assert findings == []
+
+
+def test_case_mismatch_is_flagged_on_every_platform(tmp_path):
+    # Passes on a case-insensitive disk, fails on Linux CI. Exact-case matching
+    # makes both give the same answer.
+    _repo(tmp_path, {"Docs/guide.md": "# g\n"}, {"README.md": "See `Docs/Guide.md`.\n"})
+    findings, _, _ = instructions_report(tmp_path)
+    assert _path_issues(findings) == ["Docs/Guide.md"]
+
+
+def test_code_names_in_instruction_files_are_checked_too(tmp_path):
+    _repo(
+        tmp_path,
+        {"src/app.py": "def build_index():\n    pass\n"},
+        {"AGENTS.md": "Call `build_index()`, never `rebuild_all()`.\n"},
+    )
+    findings, _, stats = instructions_report(tmp_path)
+    assert sorted(f["ref"] for f in findings if f["issue"] == "ref missing") == ["rebuild_all"]
+    assert stats["refs"] == 2
+
+
+def test_only_conventional_instruction_files_are_read(tmp_path):
+    _repo(
+        tmp_path,
+        {"src/app.py": "", "NOTES.md": "`src/gone.py`\n"},
+        {".github/copilot-instructions.md": "`src/also_gone.py`\n"},
+    )
+    findings, _, stats = instructions_report(tmp_path)
+    assert _path_issues(findings) == ["src/also_gone.py"]
+    assert stats["files"] == 1
+
+
+def test_repo_with_no_instruction_files_checks_nothing_and_says_so(tmp_path):
+    _repo(tmp_path, {"src/app.py": ""}, {})
+    findings, skipped, stats = instructions_report(tmp_path)
+    assert findings == [] and skipped == []
+    assert stats == {"files": 0, "refs": 0, "paths": 0, "unresolved": 0}
+
+
+def test_paths_in_fenced_examples_are_not_checked(tmp_path):
+    _repo(tmp_path, {"src/app.py": ""}, {"README.md": "```bash\nrun `src/gone.py`\n```\n"})
+    findings, _, stats = instructions_report(tmp_path)
+    assert findings == [] and stats["paths"] == 0
+
+
+def test_extract_paths_expands_braces_and_normalises_root_slash():
+    text = "`/src/{a,b}.py` and `docs/*.md` and `x/<n>.md`\n## Change Log\n`src/old.py`\n"
+    assert extract_paths(text) == [(1, "src/a.py"), (1, "src/b.py")]
+
+
+def test_audit_refs_reports_instruction_files_separately(tmp_path):
+    _project(tmp_path, "`compare_commits`\n")
+    _write(tmp_path, "AGENTS.md", "# agents\n\nSee `src/pkg/core.py` and `src/pkg/gone.py`.\n")
+    res = runner.invoke(app, ["audit", str(tmp_path), "--refs"])
+    assert res.exit_code == 1
+    assert "path missing" in res.stdout and "AGENTS.md:3" in res.stdout
+    assert "2 path(s) in 1 instruction file(s)" in res.stdout
+
+
+def test_audit_refs_json_carries_instruction_stats_and_plain_audit_does_not(tmp_path):
+    _project(tmp_path, "`compare_commits`\n")
+    _write(tmp_path, "AGENTS.md", "`src/pkg/core.py`\n")
+    with_refs = json.loads(runner.invoke(app, ["audit", str(tmp_path), "--refs", "--json"]).stdout)
+    assert with_refs["instructions"] == {"files": 1, "refs": 0, "paths": 1, "unresolved": 0}
+    plain = json.loads(runner.invoke(app, ["audit", str(tmp_path), "--json"]).stdout)
+    assert "instructions" not in plain
+
+
+def test_listing_the_conventional_instruction_filenames_is_not_a_claim_they_exist(tmp_path):
+    # Found by dogfooding: ADDA's own README lists the files the check reads,
+    # and `.github/` exists (for workflows) while the Copilot file does not.
+    _repo(
+        tmp_path,
+        {".github/workflows/ci.yml": "on: push\n", "src/app.py": ""},
+        {"README.md": "Reads `AGENTS.md`, `GEMINI.md` and `.github/copilot-instructions.md` when present.\n"},
+    )
+    findings, _, stats = instructions_report(tmp_path)
+    assert findings == []
+    assert stats["unresolved"] == 3 and stats["paths"] == 0

@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="version 0.4.0" src="https://img.shields.io/badge/version-0.4.0-1d9e75">
   <img alt="python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-185fa5">
-  <img alt="tests 103 passing" src="https://img.shields.io/badge/tests-103%20passing-3b6d11">
+  <img alt="tests 122 passing" src="https://img.shields.io/badge/tests-122%20passing-3b6d11">
   <img alt="OKF v0.2" src="https://img.shields.io/badge/OKF-v0.2-534ab7">
   <img alt="provider-agnostic" src="https://img.shields.io/badge/LLM-provider--agnostic-0f6e56">
 </p>
@@ -236,7 +236,7 @@ adda eval ./my-project             # rehydration fidelity %
 
 ```bash
 adda audit ./my-project            # repo-wide doc-layer drift sweep: missing/stale/unmapped/orphaned docs
-adda audit ./my-project --refs     # ...plus: every code name a doc cites must still exist (opt-in)
+adda audit ./my-project --refs     # ...plus: names and paths cited by docs and AGENTS.md/CLAUDE.md/README must exist (opt-in)
 adda hook install ./my-project     # install a pre-commit gate: blocks staging code without its doc
 adda hook run ./my-project         # what the installed hook invokes (staged-vs-staged, no dates, no LLM)
 ```
@@ -337,6 +337,16 @@ whose names all exist but whose claims about them are wrong; that still needs a
 reader. It is opt-in, skips Change Log sections
 (which exist to name code that is gone), and always prints how many names it
 checked, so an empty result can never pass for a clean one.
+
+The same flag checks, when present, the files an agent reads before any code —
+`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md` and
+`README.md`. When
+the build steps and module list are written in English, a path that no longer
+exists is a broken instruction. Paths it cannot place inside this repository —
+another repo, a filename relative to somewhere else — are counted and printed,
+never flagged. And it shares the same blind spot: adding a module can leave an
+instruction file's module list incomplete while every path it does cite still
+exists. That happened in this repository on the change that added the check.
 
 Two related boundaries, for completeness:
 

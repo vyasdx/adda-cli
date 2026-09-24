@@ -27,6 +27,7 @@ import builtins
 import keyword
 import os
 import re
+import subprocess
 from pathlib import Path
 
 from adda.modulemap import load_map
@@ -42,6 +43,12 @@ _CORPUS_SKIP = IGNORE_DIRS - {"tests", "test", "scripts", "examples"}
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _HISTORY = re.compile(r"change\s*log|history", re.I)
+# A line naming something in order to say it is gone is accurate, not drift -
+# the one-line version of a Change Log. Found in a real instruction file as a
+# path followed by "is RETIRED - ignore it" (ENH-ADDA-024).
+_GONE = re.compile(
+    r"\b(retired|removed|deleted|deprecated|obsolete|no longer|renamed|replaced|formerly)\b", re.I
+)
 _FENCE = re.compile(r"^\s*(```|~~~)")
 _SPAN = re.compile(r"`([^`\n]+)`")
 _NAME = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(\(\))?$")
@@ -66,14 +73,16 @@ def _code_name(span: str):
     return None
 
 
-def extract_refs(text: str) -> list[tuple[int, str]]:
-    """(line number, name) for every code name cited outside history and fences.
+def _live_lines(text: str):
+    """(line number, line) for every line that makes a claim about the present.
 
+    Skipped: fenced code blocks (examples), history sections (a Change Log names
+    code that is gone), and single lines that name something to say it is gone.
     A history section runs from its heading to the next heading at the same or a
     shallower level, so `### notes` inside a Change Log stays history while a
     later `## Section` is checked again.
     """
-    refs, history_level, in_fence = [], None, False
+    history_level, in_fence = None, False
     for number, line in enumerate(text.splitlines(), 1):
         if _FENCE.match(line):
             in_fence = not in_fence
@@ -87,13 +96,19 @@ def extract_refs(text: str) -> list[tuple[int, str]]:
                 history_level = None
             if history_level is None and _HISTORY.search(heading.group(2)):
                 history_level = level
-        if history_level is not None:
+        if history_level is not None or _GONE.search(line):
             continue
-        for span in _SPAN.findall(line):
-            name = _code_name(span)
-            if name:
-                refs.append((number, name))
-    return refs
+        yield number, line
+
+
+def extract_refs(text: str) -> list[tuple[int, str]]:
+    """(line number, name) for every code name cited on a live line."""
+    return [
+        (number, name)
+        for number, line in _live_lines(text)
+        for span in _SPAN.findall(line)
+        if (name := _code_name(span))
+    ]
 
 
 def _code_names(repo: Path):
@@ -155,5 +170,139 @@ def refs_report(repo: Path, adda_dir: Path) -> tuple[list[dict], list, dict]:
         skipped.append(
             f"refs-check skipped for {len(unreadable)} doc(s) that could not be read "
             f"as UTF-8: {', '.join(unreadable)}"
+        )
+    return findings, skipped, stats
+
+
+# --- ENH-ADDA-024 / ADR-0012: instruction files ------------------------------
+#
+# The files an agent reads before any code. They describe the whole repo rather
+# than one path, so they are not mapped docs - ancestry against "all the code"
+# would read stale forever. What can be checked mechanically is that the names
+# and paths they cite still exist. No configuration: a key in MODULE_MAP.json
+# would be silently dropped the next time `sync --map` regenerates the map.
+
+INSTRUCTION_FILES = (
+    "AGENTS.md", "CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md", "README.md",
+)
+
+# Path-shaped: only path characters, and either a slash or a file extension.
+# The character set is also what excludes globs (`*`, `?`, `[`) and
+# placeholders (`<today>`): patterns are not paths. Both were false positives
+# in ADDA's own instruction files.
+_PATH_CHARS = re.compile(r"^[A-Za-z0-9_.{},/-]+$")
+_EXTENSION = re.compile(r"\.[A-Za-z0-9]{1,6}$")
+_BRACES = re.compile(r"\{([^{}]*)\}")
+
+
+def _expand_braces(path: str) -> list[str]:
+    """`src/{a,b}.py` -> [`src/a.py`, `src/b.py`]; nested groups expand in turn."""
+    m = _BRACES.search(path)
+    if not m:
+        return [path]
+    head, tail = path[: m.start()], path[m.end():]
+    return [p for part in m.group(1).split(",") for p in _expand_braces(head + part + tail)]
+
+
+def extract_paths(text: str) -> list[tuple[int, str]]:
+    """(line number, repo-relative path) for every path cited on a live line.
+
+    Globs and `<placeholders>` are patterns, not paths. A leading `/` means the
+    repo root, not the filesystem root. Brace lists are expanded so each member
+    is checked on its own.
+    """
+    out = []
+    for number, line in _live_lines(text):
+        for span in _SPAN.findall(line):
+            span = span.strip()
+            if not _PATH_CHARS.match(span):
+                continue
+            if "/" not in span and not _EXTENSION.search(span):
+                continue
+            out.extend((number, p) for p in _expand_braces(span.lstrip("/")) if p)
+    return out
+
+
+def _exists_exact(repo: Path, rel: str) -> bool:
+    """True only if every segment matches on disk with the exact case.
+
+    A case-insensitive disk would pass `Docs/Guide.md` for `Docs/guide.md` while
+    Linux CI fails it; matching exactly gives both machines the same answer.
+    """
+    here = repo
+    for part in [p for p in rel.split("/") if p]:
+        try:
+            if part not in os.listdir(here):
+                return False
+        except OSError:
+            return False
+        here = here / part
+    return True
+
+
+def _ignored(repo: Path, rel: str) -> bool:
+    """Is `rel` gitignored? A generated file exists on a working machine and not on
+    a clean checkout, so it is neither present nor missing - just not ours to check."""
+    try:
+        out = subprocess.run(
+            ["git", "check-ignore", "-q", rel], cwd=repo, capture_output=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return out.returncode == 0
+
+
+def instructions_report(repo: Path) -> tuple[list[dict], list, dict]:
+    """Return (findings, skipped, stats) for the instruction files present.
+
+    A path is checked only when its first segment exists in this repo. Anything
+    else - another repository, a file relative to some other directory, a slash
+    command - is `unresolved`: counted and reported, never flagged, because this
+    rule cannot tell those apart and a false alarm costs more than a miss.
+    """
+    findings, skipped = [], []
+    stats = {"files": 0, "refs": 0, "paths": 0, "unresolved": 0}
+    present = [f for f in INSTRUCTION_FILES if (repo / f).is_file()]
+    if not present:
+        return findings, skipped, stats
+
+    names = _code_names(repo)
+    if names is None:
+        skipped.append("instruction-file name check skipped: no source files found")
+    unreadable = []
+    for rel in present:
+        try:
+            text = (repo / rel).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            unreadable.append(rel)
+            continue
+        stats["files"] += 1
+        if names is not None:
+            for line, name in extract_refs(text):
+                stats["refs"] += 1
+                if name not in names:
+                    findings.append({
+                        "item": f"{rel}:{line}", "issue": "ref missing",
+                        "severity": "medium", "ref": name,
+                    })
+        for line, path in extract_paths(text):
+            # Docs about AI tooling list the conventional instruction files by
+            # name, generically. Citing one is not a claim that it exists here -
+            # found when ADDA's own README tripped this rule on its first run.
+            generic = path in INSTRUCTION_FILES and not _exists_exact(repo, path)
+            if generic or not _exists_exact(repo, path.split("/")[0]):
+                stats["unresolved"] += 1
+                continue
+            stats["paths"] += 1
+            if not _exists_exact(repo, path) and not _ignored(repo, path):
+                findings.append({
+                    "item": f"{rel}:{line}", "issue": "path missing",
+                    "severity": "medium", "ref": path,
+                })
+
+    if unreadable:
+        skipped.append(
+            f"instruction-file check skipped for {len(unreadable)} file(s) that could "
+            f"not be read as UTF-8: {', '.join(unreadable)}"
         )
     return findings, skipped, stats
