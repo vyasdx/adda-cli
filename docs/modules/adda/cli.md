@@ -5,7 +5,7 @@
 
 Last verified: 2026-09-24
 
-**Purpose** - ADDA's only entrypoint - the Typer app that wires the twelve commands to the library modules.
+**Purpose** - ADDA's only entrypoint - the Typer app that wires the thirteen commands to the library modules.
 
 ## Commands
 
@@ -21,6 +21,7 @@ Last verified: 2026-09-24
 | `diff [path]` | report documented-vs-actual module drift | `diff.diff_report` |
 | `audit [path] [--json] [--refs]` | doc-layer drift: missing, stale, unmapped, orphaned docs; with `--refs`, also code names and paths that docs and instruction files cite but no longer exist | `audit.audit_report`, `refs.refs_report`, `refs.instructions_report` |
 | `eval [path] [--json]` | rehydration fidelity % | `evaluate.evaluate` |
+| `doctor [path]` | prove the commit gate is on: hook in the directory git reads, runs the ADDA gate, interpreter exists and imports adda, map maps something, `ADDA_SKIP` unset; exit 1 on any failure | `doctor.diagnose` |
 | `hook run [path]` | block the commit when staged code is missing its staged doc | `hook.check_staged`, `hook.staged_paths` |
 | `hook install [path] [--force]` | write `.git/hooks/pre-commit`, delegating to `hook run`; refuses to overwrite without `--force` | `hook.HOOK_STUB` |
 
@@ -36,6 +37,7 @@ Last verified: 2026-09-24
 
 ## Change Log (newest first)
 
+- [2026-09-24] ENH-ADDA-030 - added `doctor` · the gate fails open and is never cloned, so a broken or absent gate looked exactly like a working one. Prints one `[ ok ]`/`[FAIL]`/`[ -- ]` line per check and a count line; exits 1 on any failure.
 - [2026-09-24] ENH-ADDA-028 - `sync --map` passes the whole previous map to `module_map_json`, not just `include`, and ignores a previous file that is valid JSON but not an object; `audit --refs` passes `modulemap.load_instructions` to `instructions_report` · settings the generator does not own now survive a regenerate, which is what makes a configurable instruction-file list safe.
 - [2026-09-24] ENH-ADDA-024 - `audit --refs` also runs `refs.instructions_report` · JSON gains an `instructions` count block beside `refs`, and the text output adds a line stating how many names and paths were checked in how many instruction files, and how many path-like spans did not resolve and were left unchecked. Plain `audit` is unchanged.
 

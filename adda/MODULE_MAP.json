@@ -4,6 +4,7 @@
     "src/adda/cli.py": "docs/modules/adda/cli.md",
     "src/adda/compress.py": "docs/modules/adda/compress.md",
     "src/adda/diff.py": "docs/modules/adda/diff.md",
+    "src/adda/doctor.py": "docs/modules/adda/doctor.md",
     "src/adda/evaluate.py": "docs/modules/adda/evaluate.md",
     "src/adda/hook.py": "docs/modules/adda/hook.md",
     "src/adda/modulemap.py": "docs/modules/adda/modulemap.md",

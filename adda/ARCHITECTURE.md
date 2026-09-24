@@ -10,7 +10,7 @@ to restore memory after a compaction; the Context Sentinel says when to checkpoi
 `diff`/`eval` measure drift and rehydration fidelity. v0.3 adds an enforcement
 layer: `sync --map` derives `MODULE_MAP.json` (code->doc routing), `audit` sweeps
 the whole repo for doc-layer drift against that map, and `hook` blocks a commit
-that stages code without its doc. Closed loop: monitor → checkpoint → compact →
+that stages code without its doc; `doctor` proves that gate is actually on. Closed loop: monitor → checkpoint → compact →
 rehydrate → audit/enforce.
 
 ## Constraints
@@ -23,7 +23,7 @@ rehydrate → audit/enforce.
 
 ## Modules
 
-- cli: Typer entrypoint wiring all twelve commands. (active) [src/adda/cli.py]
+- cli: Typer entrypoint wiring all thirteen commands. (active) [src/adda/cli.py]
 - okf: OKF pydantic schema + markdown→OKF compiler. (active) [src/adda/okf.py]
 - sentinel: Context Sentinel token gauge + count_tokens fallback. (active) [src/adda/sentinel.py]
 - rehydrate: minimal-OKF emitter (the north-star). (active) [src/adda/rehydrate.py]
@@ -35,3 +35,4 @@ rehydrate → audit/enforce.
 - audit: doc-layer drift sweep (active) [src/adda/audit.py]
 - refs: names and paths cited by module docs and instruction files must still exist, opt-in via `audit --refs` (active) [src/adda/refs.py]
 - hook: pre-commit doc gate (active) [src/adda/hook.py]
+- doctor: proves the commit gate is on - hook where git looks, runnable interpreter, a map that maps something (active) [src/adda/doctor.py]

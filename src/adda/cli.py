@@ -435,6 +435,25 @@ def eval_cmd(
         typer.echo("  dropped (non-load-bearing): " + ", ".join(report["dropped"]))
 
 
+@app.command()
+def doctor(
+    path: Path = typer.Argument(Path("."), help="Repo root (default: current)."),
+) -> None:
+    """Prove the commit gate is on: hook installed where git looks, runnable, and mapping something."""
+    from adda.doctor import diagnose
+
+    checks = diagnose(path)
+    marks = {"ok": ("[ ok ]", typer.colors.GREEN), "fail": ("[FAIL]", typer.colors.RED),
+             "n/a": ("[ -- ]", None)}
+    for c in checks:
+        mark, colour = marks[c["state"]]
+        typer.secho(f"{mark} {c['check']}: {c['detail']}", fg=colour)
+    counts = {s: sum(c["state"] == s for c in checks) for s in marks}
+    typer.echo(f"\n{counts['ok']} ok, {counts['fail']} failed, {counts['n/a']} not applicable")
+    if counts["fail"]:
+        raise typer.Exit(1)
+
+
 hook_app = typer.Typer(help="Pre-commit enforcement: code changes must carry their doc.")
 app.add_typer(hook_app, name="hook")
 

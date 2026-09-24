@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="version 0.4.0" src="https://img.shields.io/badge/version-0.4.0-1d9e75">
   <img alt="python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-185fa5">
-  <img alt="tests 137 passing" src="https://img.shields.io/badge/tests-137%20passing-3b6d11">
+  <img alt="tests 149 passing" src="https://img.shields.io/badge/tests-149%20passing-3b6d11">
   <img alt="OKF v0.2" src="https://img.shields.io/badge/OKF-v0.2-534ab7">
   <img alt="provider-agnostic" src="https://img.shields.io/badge/LLM-provider--agnostic-0f6e56">
 </p>
@@ -68,7 +68,8 @@ Doc drift detected: 1 finding(s)
 ```
 
 It exits non-zero when it finds something, so it drops straight into CI. Make it
-a commit gate with `adda hook install`.
+a commit gate with `adda hook install`, and `adda doctor` proves the gate is
+really on — on a fresh clone it is not, and nothing else says so.
 
 **It reports what it cannot determine.** Staleness comes from git commit
 ancestry, not a hand-written date — and when two commits are unordered
@@ -239,6 +240,7 @@ adda audit ./my-project            # repo-wide doc-layer drift sweep: missing/st
 adda audit ./my-project --refs     # ...plus: names and paths cited by docs and AGENTS.md/CLAUDE.md/README must exist (opt-in)
 adda hook install ./my-project     # install a pre-commit gate: blocks staging code without its doc
 adda hook run ./my-project         # what the installed hook invokes (staged-vs-staged, no dates, no LLM)
+adda doctor ./my-project           # prove the gate is on: hook where git looks, runnable, map non-empty (exit 1 if not)
 ```
 
 `adda init` writes the spec layout: `VERSION.md`, `ARCHITECTURE.md`, `DOMAIN_MODEL.md`,
