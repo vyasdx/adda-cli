@@ -18,31 +18,13 @@ import re
 import subprocess
 from pathlib import Path
 
+from adda.hook import hooks_dir
 from adda.modulemap import MAP_FILENAME
 
 _GATE = "adda.cli hook run"
 # `ADDA_PY="..."` in the installed stub, or the one-line form `hook install`
 # prints for a repo that already has a hook: exec "<python>" -m adda.cli hook run
 _INTERPRETER = re.compile(r'ADDA_PY="([^"]+)"|"([^"]+)"\s+-m\s+adda\.cli\s+hook\s+run')
-
-
-def hooks_dir(repo: Path):
-    """The directory git actually runs hooks from, or None outside a git repo.
-
-    Asked of git, not assumed: `core.hooksPath` moves it away from .git/hooks
-    (BUG-ADDA-027), and a worktree keeps it somewhere else again.
-    """
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "--git-path", "hooks"],
-            cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if out.returncode != 0 or not out.stdout.strip():
-        return None
-    path = Path(out.stdout.strip())
-    return path if path.is_absolute() else repo / path
 
 
 def _check(name, state, detail):

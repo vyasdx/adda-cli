@@ -9,7 +9,7 @@ Last verified: 2026-09-24
 
 ## Public surface
 
-`diagnose(repo) -> [{"check", "state", "detail"}]` with `state` in `ok` / `fail` / `n/a` · `hooks_dir(repo) -> Path | None`
+`diagnose(repo) -> [{"check", "state", "detail"}]` with `state` in `ok` / `fail` / `n/a` (it uses `hook.hooks_dir`, shared with `hook install`)
 
 Checks, in order: `git repository` · `pre-commit hook` · `runs the ADDA gate` · `executable` · `interpreter` · `adda importable` · `MODULE_MAP.json` · `ADDA_SKIP`.
 
@@ -25,4 +25,5 @@ Checks, in order: `git repository` · `pre-commit hook` · `runs the ADDA gate` 
 
 ## Change Log (newest first)
 
+- [2026-09-24] BUG-ADDA-027 - `hooks_dir` moved to `hook.py` so `hook install` and `doctor` share one answer to "where does git read hooks?" · two copies of that rule is how they would drift apart.
 - [2026-09-24] ENH-ADDA-030 - module created · the gate's fail-open design and the fact that hooks are never cloned meant a fresh clone, a deleted venv or a `core.hooksPath` repo all looked enforced while enforcing nothing. Found while designing it: BUG-ADDA-027, `hook install` ignoring `core.hooksPath`, which this module detects.

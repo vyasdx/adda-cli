@@ -100,8 +100,11 @@ def test_non_ascii_mapped_file_without_its_doc_still_blocks(tmp_path):
 
 
 def _git_dir(tmp_path):
+    # A real repository: install asks git where hooks live (BUG-ADDA-027), so a
+    # bare .git/hooks directory no longer passes for one.
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     hooks = tmp_path / ".git" / "hooks"
-    hooks.mkdir(parents=True)
+    hooks.mkdir(parents=True, exist_ok=True)
     return hooks
 
 
@@ -158,3 +161,33 @@ def test_install_outside_git_repo_fails_clearly(tmp_path):
     res = runner.invoke(app, ["hook", "install", str(tmp_path)])
     assert res.exit_code == 1
     assert "not a git repo" in res.stdout.lower()
+
+def test_install_writes_where_core_hooks_path_points(tmp_path):
+    # BUG-ADDA-027: husky and similar set core.hooksPath, and git then never
+    # reads .git/hooks. Installing there printed "Installed" and gated nothing.
+    _git_dir(tmp_path)
+    _git(tmp_path, "config", "core.hooksPath", ".husky")
+    res = runner.invoke(app, ["hook", "install", str(tmp_path)])
+    assert res.exit_code == 0
+    assert "-m adda.cli hook run" in (tmp_path / ".husky" / "pre-commit").read_text(encoding="utf-8")
+    assert not (tmp_path / ".git" / "hooks" / "pre-commit").exists()
+    assert "core.hooksPath" in res.stdout
+
+
+def test_gate_installed_under_core_hooks_path_really_blocks_a_commit(tmp_path):
+    # The reproduction, end to end: a real `git commit` must be refused.
+    _git_dir(tmp_path)
+    _git(tmp_path, "config", "core.hooksPath", ".husky")
+    _git(tmp_path, "config", "user.name", "t")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _project(tmp_path, mapping={"src/app.py": "docs/modules/app.md"})
+    assert runner.invoke(app, ["hook", "install", str(tmp_path)]).exit_code == 0
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
+    _git(tmp_path, "add", "src/app.py")
+    out = subprocess.run(
+        ["git", "commit", "-qm", "code without its doc"], cwd=tmp_path,
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    assert out.returncode != 0
+    assert "Commit blocked" in out.stdout + out.stderr

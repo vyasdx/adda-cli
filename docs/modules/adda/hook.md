@@ -3,15 +3,15 @@
 
 # `hook` - `src/adda/hook.py`
 
-Last verified: 2026-08-18
+Last verified: 2026-09-24
 
 **Purpose** - The commit gate (the vision's layer 4) - enforcement that is mechanical, not memory. Blocks a commit that stages a code file without staging the doc `MODULE_MAP.json` routes it to. Staged-vs-staged needs no dates and no LLM, so there is nothing to forge and nothing to forget. `adda hook install` writes a pre-commit stub, with the install-time Python interpreter baked in, that invokes `python -m adda.cli hook run` on every commit.
 
 ## Public surface
 
-`HOOK_STUB` (the shell script template, `{python}` placeholder) · `hook_body(python) -> str` (renders the stub for a specific interpreter) · `staged_paths(repo) -> [str]` · `check_staged(repo, adda_dir, staged) -> [(code, required_doc)]`
+`HOOK_STUB` (the shell script template, `{python}` placeholder) · `hook_body(python) -> str` (renders the stub for a specific interpreter) · `hooks_dir(repo) -> Path | None` (where git actually reads hooks; shared with `doctor`) · `staged_paths(repo) -> [str]` · `check_staged(repo, adda_dir, staged) -> [(code, required_doc)]`
 
-CLI: `adda hook run [path]` (invoked by the installed hook) · `adda hook install [path] [--force]` (writes `.git/hooks/pre-commit`).
+CLI: `adda hook run [path]` (invoked by the installed hook) · `adda hook install [path] [--force]` (writes `pre-commit` into the directory git reads hooks from - `.git/hooks` by default, or wherever `core.hooksPath` points).
 
 ## Invariants
 
@@ -21,6 +21,7 @@ CLI: `adda hook run [path]` (invoked by the installed hook) · `adda hook instal
 - **A missing `MODULE_MAP.json` must not block.** `check_staged` catches `load_map`'s `FileNotFoundError` and returns no gaps - that repo has not adopted the convention, and reporting it is `audit`'s job, not the gate's.
 - **`staged_paths` fails open when git is unavailable** (not a repo, git missing, decode failure) - the one deliberate fail-open in the release. The gate assists committing rather than auditing; a broken git invocation should not brick every commit in every repo that happens to run `adda hook run`.
 - **Staged paths are read with `-z` and `encoding="utf-8"`.** Git quotes non-ASCII paths by default (`"src/caf\303\251.py"`); a mangled path matches no `MODULE_MAP` entry, which would let a staged file slip past silently. `-z` gives unquoted, NUL-separated paths; `encoding="utf-8"` is required because `text=True` alone decodes with the locale/console codepage (e.g. Windows cp1252), which mangles a UTF-8 filename differently than the quoting bug it was meant to fix.
+- **`install` writes where git reads, asked of git (`git rev-parse --git-path hooks`), never assumed.** With `core.hooksPath` set - husky and similar - git never reads `.git/hooks`; writing there printed "Installed" while a real commit of undocumented code went through (BUG-ADDA-027). The directory is created if the configured path does not exist yet, and a custom path is named in the output. A real `git commit` test pins it.
 - **`install` never clobbers an existing hook without `--force`.** Without it, `hook_install` refuses, prints the exec line for the current interpreter so the user can splice it into their existing hook by hand, and exits 1.
 - **The stub delegates to `python -m adda.cli hook run`** rather than embedding the gate logic in the shell script, so hook upgrades ship with the package and never require reinstalling `.git/hooks/pre-commit`.
 - **The interpreter path is baked in at install time, so the hook does not depend on `PATH`.** A bare `adda` (or `python`) is not reliably resolvable when git invokes hooks: ADDA is normally installed into a project venv that is not active in that shell, and in ADDA's own repo a bare `adda` can even resolve to the `adda/` architecture-memory *directory* instead of the executable (`exec: adda: cannot execute: Is a directory`). `hook_install` bakes `sys.executable` (forward slashes, since git's bundled `sh` handles `C:/...` but not `C:\...`) into the stub via `hook_body`, and verifies the write by reading the file back and checking for `hook run` before reporting success.
@@ -31,6 +32,7 @@ CLI: `adda hook run [path]` (invoked by the installed hook) · `adda hook instal
 
 ## Change Log (newest first)
 
+- [2026-09-24] BUG-ADDA-027 - `hooks_dir` (moved here from `doctor`) resolves the hooks directory via `git rev-parse --git-path hooks`, and `hook install` writes there · with `core.hooksPath` set, install wrote to `.git/hooks`, which git never reads: reported installed, enforced nothing. Reproduced with a real commit before the fix and blocked by the same commit after it; a mutation dropping the `mkdir` turns two tests red.
 - [2026-08-18] ENH-ADDA-007 — documented that the hook is per-machine: untracked, interpreter baked in at install time, fails open if that interpreter goes away · enforcement can lapse silently, so `adda audit` is the backstop.
 - [2026-08-18] ENH-ADDA-007 — hook stub now execs the install-time interpreter via `-m adda.cli` · `exec adda hook run` needed `adda` on PATH and resolved to ADDA's own `adda/` directory, so the installed hook did not run at all.
 - [2026-08-18] ENH-ADDA-007 — module created · the commit gate: enforcement that is mechanical, not memory.

@@ -17,7 +17,7 @@ from adda.audit import audit_report
 from adda.compress import compress_text
 from adda.diff import diff_report
 from adda.evaluate import evaluate
-from adda.hook import check_staged, hook_body, staged_paths
+from adda.hook import check_staged, hook_body, hooks_dir, staged_paths
 from adda.okf import compile_okf
 from adda.modulemap import load_instructions
 from adda.refs import instructions_report, refs_report
@@ -486,11 +486,16 @@ def hook_install(
     path: Path = typer.Argument(Path("."), help="Repo root (default: current)."),
     force: bool = typer.Option(False, "--force", help="Overwrite an existing pre-commit hook."),
 ) -> None:
-    """Install the pre-commit doc gate into .git/hooks/pre-commit."""
-    hooks = path / ".git" / "hooks"
-    if not hooks.is_dir():
-        typer.secho(f"{path} is not a git repo (no .git/hooks).", fg=typer.colors.RED)
+    """Install the pre-commit doc gate where git actually reads hooks."""
+    # Asked of git, not assumed (BUG-ADDA-027): with core.hooksPath set - husky
+    # and similar do - git never reads .git/hooks, and a gate written there was
+    # reported installed while enforcing nothing.
+    hooks = hooks_dir(path)
+    if hooks is None:
+        typer.secho(f"{path} is not a git repo.", fg=typer.colors.RED)
         raise typer.Exit(1)
+    custom = hooks.resolve() != (path / ".git" / "hooks").resolve()
+    hooks.mkdir(parents=True, exist_ok=True)
     target = hooks / "pre-commit"
     if target.exists() and not force:
         typer.secho(f"{target} already exists. Re-run with --force, or add this line yourself:", fg=typer.colors.RED)
@@ -506,7 +511,10 @@ def hook_install(
         typer.secho(f"Wrote {target} but the content looks wrong - install failed.", fg=typer.colors.RED)
         raise typer.Exit(1)
     typer.secho(f"Installed doc gate -> {target}", fg=typer.colors.GREEN)
+    if custom:
+        typer.echo("(core.hooksPath is set, so the gate goes where git reads hooks, not .git/hooks.)")
     typer.echo("Bypass when you must: `git commit --no-verify` or ADDA_SKIP=1.")
+    typer.echo("Prove it is on: `adda doctor`.")
 
 
 if __name__ == "__main__":  # `python -m adda.cli` - used by the installed git hook

@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="version 0.4.0" src="https://img.shields.io/badge/version-0.4.0-1d9e75">
   <img alt="python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-185fa5">
-  <img alt="tests 149 passing" src="https://img.shields.io/badge/tests-149%20passing-3b6d11">
+  <img alt="tests 151 passing" src="https://img.shields.io/badge/tests-151%20passing-3b6d11">
   <img alt="OKF v0.2" src="https://img.shields.io/badge/OKF-v0.2-534ab7">
   <img alt="provider-agnostic" src="https://img.shields.io/badge/LLM-provider--agnostic-0f6e56">
 </p>

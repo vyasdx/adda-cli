@@ -32,6 +32,25 @@ exec "$ADDA_PY" -m adda.cli hook run
 """
 
 
+def hooks_dir(repo: Path):
+    """The directory git actually runs hooks from, or None outside a git repo.
+
+    Asked of git, not assumed: `core.hooksPath` moves it away from .git/hooks
+    (BUG-ADDA-027), and a worktree keeps it somewhere else again.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--git-path", "hooks"],
+            cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0 or not out.stdout.strip():
+        return None
+    path = Path(out.stdout.strip())
+    return path if path.is_absolute() else repo / path
+
+
 def hook_body(python: str) -> str:
     """Render the stub for a specific interpreter.
 
