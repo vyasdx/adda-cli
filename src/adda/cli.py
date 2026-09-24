@@ -468,6 +468,42 @@ def memory(
 
 
 @app.command()
+def restated(
+    path: Path = typer.Argument(Path("."), help="Repo root (default: current)."),
+    rev: str = typer.Option("HEAD", "--rev", help="The commit that corrected something."),
+    also: list[Path] = typer.Option([], "--also", help="Also search this untracked directory (repeatable)."),
+    json_out: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """After a correction: list other files still stating, word for word, what the commit removed."""
+    import subprocess
+
+    from adda.restated import restated_report
+
+    try:
+        current, records, skipped = restated_report(path, rev, also)
+    except (subprocess.CalledProcessError, OSError):
+        typer.secho(f"Cannot read {rev} in {path}: not a git repository, or no such commit.",
+                    fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if json_out:
+        typer.echo(json.dumps({"current": current, "records": records, "skipped": skipped}, indent=2))
+    else:
+        for s in skipped:
+            typer.secho(f"[skipped] {s}", fg=typer.colors.YELLOW)
+        for title, group, colour in (("Still stated in current files", current, typer.colors.RED),
+                                     ("Also in dated records (history, usually left as is)", records, None)):
+            if group:
+                typer.secho(f"{title}:", fg=colour)
+                for h in group:
+                    typer.echo(f"  {h['file']}:{h['line']}  <- {h['source']}  \"{h['text']}\"")
+        if not current and not records and not skipped:
+            typer.secho(f"Nothing {rev} removed is still stated elsewhere.", fg=typer.colors.GREEN)
+        typer.echo("(Finds exact copies, not paraphrases: a reworded statement of the old fact is not seen.)")
+    if current:
+        raise typer.Exit(1)
+
+
+@app.command()
 def doctor(
     path: Path = typer.Argument(Path("."), help="Repo root (default: current)."),
 ) -> None:

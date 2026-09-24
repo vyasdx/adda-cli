@@ -5,7 +5,7 @@
 
 Last verified: 2026-09-24
 
-**Purpose** - ADDA's only entrypoint - the Typer app that wires the fourteen commands to the library modules.
+**Purpose** - ADDA's only entrypoint - the Typer app that wires the fifteen commands to the library modules.
 
 ## Commands
 
@@ -22,6 +22,7 @@ Last verified: 2026-09-24
 | `audit [path] [--json] [--refs]` | doc-layer drift: missing, stale, unmapped, orphaned docs; with `--refs`, also code names and paths that docs and instruction files cite but no longer exist | `audit.audit_report`, `refs.refs_report`, `refs.instructions_report` |
 | `eval [path] [--json]` | rehydration fidelity % | `evaluate.evaluate` |
 | `memory <dir> [--index] [--json]` | audit an agent's memory directory: notes not indexed, dangling index entries or `[[links]]`, notes indexed twice, one fact recorded twice; exit 1 on any finding | `memory.memory_report` |
+| `restated [path] [--rev] [--also DIR] [--json]` | after a correction: other files still stating, word for word, what the commit removed; dated records shown apart; exit 1 only for current files | `restated.restated_report` |
 | `doctor [path]` | prove the commit gate is on: hook in the directory git reads, runs the ADDA gate, interpreter exists and imports adda, map maps something, `ADDA_SKIP` unset; exit 1 on any failure | `doctor.diagnose` |
 | `hook run [path]` | block the commit when staged code is missing its staged doc | `hook.check_staged`, `hook.staged_paths` |
 | `hook install [path] [--force]` | write `pre-commit` where git reads hooks (`.git/hooks`, or `core.hooksPath`), delegating to `hook run`; refuses to overwrite without `--force` | `hook.HOOK_STUB` |
@@ -38,6 +39,7 @@ Last verified: 2026-09-24
 
 ## Change Log (newest first)
 
+- [2026-09-24] ENH-ADDA-031 - added `restated` · a corrected fact left standing elsewhere was found only by hand. Groups current files and dated records, prints on every run that it finds copies and not paraphrases, and fails clearly outside a git repo or on an unknown commit.
 - [2026-09-24] ENH-ADDA-029 - added `memory` · agent memory drifts like docs (BUG-ADDA-024, RF-ADDA-009, both found by hand). Prints what it checked, one line per finding, `--json` for scripts; a path that is not a directory exits 1 with a clear message.
 - [2026-09-24] BUG-ADDA-027 - `hook install` asks `hook.hooks_dir` where git reads hooks instead of assuming `.git/hooks`, creates it if needed, names a custom `core.hooksPath` in its output and points at `adda doctor` · a husky-style repo got a gate git never ran.
 - [2026-09-24] ENH-ADDA-030 - added `doctor` · the gate fails open and is never cloned, so a broken or absent gate looked exactly like a working one. Prints one `[ ok ]`/`[FAIL]`/`[ -- ]` line per check and a count line; exits 1 on any failure.

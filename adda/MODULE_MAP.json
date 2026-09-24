@@ -12,6 +12,7 @@
     "src/adda/okf.py": "docs/modules/adda/okf.md",
     "src/adda/refs.py": "docs/modules/adda/refs.md",
     "src/adda/rehydrate.py": "docs/modules/adda/rehydrate.md",
+    "src/adda/restated.py": "docs/modules/adda/restated.md",
     "src/adda/sentinel.py": "docs/modules/adda/sentinel.md",
     "src/adda/sync.py": "docs/modules/adda/sync.md"
   },
