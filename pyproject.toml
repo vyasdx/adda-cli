@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "adda"
-version = "0.4.0"
+version = "0.5.0"
 description = "ADDA — anti-drift architecture memory + OKF + Context Sentinel for AI-assisted development."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -67,10 +67,14 @@ packages = ["src/adda"]
 # omitting. Releases are still cut from the public mirror; this makes an
 # accidental build here safe rather than relying on remembering where to stand.
 [tool.hatch.build.targets.sdist]
+# Every entry anchored to the root with a leading `/` (BUG-ADDA-028). These are
+# gitignore-style patterns: a bare "README.md" matched a README at ANY depth,
+# and an internal folder's README rode into the sdist - caught by the package
+# guard in CI, not by reading this list.
 include = [
-    "src", "tests", "docs/modules", "adda", "benchmarks",
-    "scripts/smoke_test.py", "scripts/check_counts.py",
-    "README.md", "LICENSE", "OKF_SCHEMA.md", "pyproject.toml",
+    "/src", "/tests", "/docs/modules", "/adda", "/benchmarks",
+    "/scripts/smoke_test.py", "/scripts/check_counts.py",
+    "/README.md", "/LICENSE", "/OKF_SCHEMA.md", "/pyproject.toml",
 ]
 
 [tool.ruff]
