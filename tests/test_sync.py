@@ -303,6 +303,69 @@ def test_map_regeneration_keeps_keys_it_does_not_generate(tmp_path):
     assert data["map"] == {"app.py": "docs/modules/app.md"}  # generated keys still regenerate
 
 
+def _regen(root, previous):
+    out = root / "adda" / "MODULE_MAP.json"
+    out.parent.mkdir(exist_ok=True)
+    out.write_text(json.dumps(previous), encoding="utf-8")
+    res = runner.invoke(app, ["sync", str(root), "--map", "--out", str(out)])
+    assert res.exit_code == 0
+    return json.loads(out.read_text(encoding="utf-8"))
+
+
+def test_regeneration_keeps_the_doc_a_product_chose(tmp_path):
+    """ENH-ADDA-034: fleet repos name their docs by hand (`docs/modules/agent-runner.md`).
+
+    On a real one, 0 of 119 generated targets matched its 60 existing docs. A
+    product that points the map at its real docs must not lose that on the next
+    routine regenerate - only files the map has never seen get a generated path.
+    """
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "runner.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "src" / "new.py").write_text("y = 2\n", encoding="utf-8")
+    data = _regen(tmp_path, {"map": {"src/runner.py": "docs/modules/agent-runner.md"}, "exempt": []})
+    assert data["map"] == {
+        "src/runner.py": "docs/modules/agent-runner.md",  # kept
+        "src/new.py": "docs/modules/new.md",              # generated
+    }
+
+
+def test_regeneration_drops_entries_for_code_that_is_gone(tmp_path):
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    data = _regen(tmp_path, {"map": {"gone.py": "docs/modules/gone.md"}, "exempt": []})
+    assert data["map"] == {"app.py": "docs/modules/app.md"}
+
+
+def test_regeneration_keeps_hand_written_exempt_patterns(tmp_path):
+    # The exempt list is a product's written-down debt register during a
+    # rollout; a regenerate must not quietly turn it into a wall of findings.
+    (tmp_path / "src" / "legacy").mkdir(parents=True)
+    (tmp_path / "src" / "legacy" / "old.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "src" / "core.py").write_text("y = 2\n", encoding="utf-8")
+    (tmp_path / "src" / "conftest.py").write_text("\n", encoding="utf-8")  # generated exempt
+    data = _regen(tmp_path, {"map": {}, "exempt": ["src/legacy/*", "src/generated/*"]})
+    assert data["map"] == {"src/core.py": "docs/modules/core.md"}
+    assert data["exempt"] == ["src/conftest.py", "src/generated/*", "src/legacy/*"]
+
+
+def test_an_exempt_pattern_wins_over_an_older_map_entry(tmp_path):
+    # Found on the fleet trial: the first regenerate maps every page; exempting
+    # them afterwards must take them out of the map, or the exemption is ignored.
+    (tmp_path / "src" / "app").mkdir(parents=True)
+    (tmp_path / "src" / "app" / "page.tsx").write_text("x\n", encoding="utf-8")
+    (tmp_path / "src" / "lib.ts").write_text("y\n", encoding="utf-8")
+    data = _regen(tmp_path, {
+        "map": {"src/app/page.tsx": "docs/modules/app/page.md", "src/lib.ts": "docs/modules/lib.md"},
+        "exempt": ["src/app/**/page.tsx", "src/app/page.tsx"],
+    })
+    assert data["map"] == {"src/lib.ts": "docs/modules/lib.md"}
+
+
+def test_stale_exact_exempt_path_is_dropped_but_a_pattern_is_kept(tmp_path):
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    data = _regen(tmp_path, {"map": {}, "exempt": ["deleted.py", "vendor/*"]})
+    assert data["exempt"] == ["vendor/*"]
+
+
 def test_root_tooling_config_is_not_a_documentable_module(tmp_path):
     """Mapping loose root files (BUG-ADDA-018) exposed the repo root's config.
 

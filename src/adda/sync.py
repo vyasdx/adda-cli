@@ -14,6 +14,8 @@ import json
 import re
 from pathlib import Path
 
+from adda.modulemap import is_exempt
+
 # Directories that are never project "modules" (build/tooling/test/doc noise).
 IGNORE_DIRS = {
     ".git", ".venv", "venv", "env", "node_modules", "__pycache__", "dist", "build",
@@ -230,6 +232,10 @@ def source_files(repo: Path, include=None) -> list:
     return source_roots(repo, include)[0]
 
 
+def _slash(path: str) -> str:
+    return path.replace("\\", "/").strip("/")
+
+
 def module_map_json(repo: Path, doc_dir: str = "docs/modules", include=None, keep=None) -> str:
     """Derive MODULE_MAP.json content: every source .py -> its module doc.
 
@@ -249,16 +255,34 @@ def module_map_json(repo: Path, doc_dir: str = "docs/modules", include=None, kee
     carried over verbatim. Only `include` used to survive, so any other setting
     (`instructions`, ENH-ADDA-028) vanished on the next routine regenerate and
     the check it configured stopped running without a word.
+
+    The previous `map` and `exempt` are kept too (ENH-ADDA-034). A product whose
+    docs are named by hand points each entry at its real doc; on a fleet repo
+    none of 119 generated paths matched its 60 existing docs, so overwriting
+    those choices on every regenerate made the map unusable. An entry is kept
+    while its code exists; only code the map has never seen gets a generated
+    path. A hand-written exempt pattern is kept and wins over an older map entry;
+    an exact exempt path whose file is gone is dropped. Delete the file to regenerate from scratch.
     """
+    previous = (keep or {}).get("map")
+    previous = {_slash(k): v for k, v in previous.items()} if isinstance(previous, dict) else {}
+    written = [_slash(e) for e in ((keep or {}).get("exempt") or []) if isinstance(e, str)]
+    files = source_files(repo, include)
     mapping, exempt = {}, []
-    for rel in source_files(repo, include):
+    for rel in files:
+        if is_exempt(rel, written):
+            continue  # a written exemption is the most specific statement
+        if rel in previous:
+            mapping[rel] = previous[rel]  # the doc the product chose
+            continue
         if rel.rsplit("/", 1)[-1] in MAP_EXEMPT_NAMES:
             exempt.append(rel)
             continue
         # mirror the path, not just the stem - see the docstring
         stem_path = rel[4:] if rel.startswith("src/") else rel
         mapping[rel] = f"{doc_dir}/{stem_path.rsplit('.', 1)[0]}.md"
-    out = {"map": mapping, "exempt": sorted(exempt)}
+    exempt += [e for e in written if any(c in e for c in "*?[") or e in files]
+    out = {"map": mapping, "exempt": sorted(set(exempt))}
     out.update({k: v for k, v in (keep or {}).items() if k not in out and k != "include"})
     if include:
         # Round-tripped so regenerating the map does not silently re-drop the
