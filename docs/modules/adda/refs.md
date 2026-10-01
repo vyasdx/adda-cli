@@ -3,7 +3,7 @@
 
 # `refs` - `src/adda/refs.py`
 
-Last verified: 2026-09-24
+Last verified: 2026-10-02
 
 **Purpose** - The deterministic slice of the gap ancestry cannot see (ADR-0010, ADR-0011). `audit` decides staleness by commit ancestry, so a doc committed alongside its code reads as current even when it names a function deleted in that same commit. `refs` checks that every code name a mapped doc cites still appears somewhere in the source. Opt-in, via `adda audit --refs`.
 
@@ -11,9 +11,9 @@ It also covers the instruction files an agent reads before any code (ADR-0012): 
 
 ## Public surface
 
-`refs_report(repo, adda_dir) -> (findings, skipped, stats)` · `instructions_report(repo, extra=()) -> (findings, skipped, stats)` · `extract_refs(text) -> [(line, name)]` · `extract_paths(text) -> [(line, path)]`
+`refs_report(repo, adda_dir) -> (findings, skipped, stats)` · `instructions_report(repo, extra=()) -> (findings, skipped, stats)` · `extract_refs(text) -> [(line, name)]` · `extract_paths(text) -> [(line, path)]` · `extract_links(text) -> [(line, target)]`
 
-Findings are `{"item": "file:line", "issue": "ref missing" | "path missing", "severity": "medium", "ref": name_or_path}`. `refs_report` stats are `{"docs", "refs"}`; `instructions_report` stats are `{"files", "refs", "paths", "unresolved"}` - so every count of what was checked, and of what could not be, is visible.
+Findings are `{"item": "file:line", "issue": "ref missing" | "path missing" | "link missing", "severity": "medium", "ref": name_or_path}`. `refs_report` stats are `{"docs", "refs"}`; `instructions_report` stats are `{"files", "refs", "paths", "unresolved"}` - so every count of what was checked, and of what could not be, is visible.
 
 ## Invariants
 
@@ -33,10 +33,12 @@ Findings are `{"item": "file:line", "issue": "ref missing" | "path missing", "se
 - **Paths:** brace lists expand and each member is checked; a leading `/` means the repo root; the path character set excludes globs and `<placeholders>`; gitignored paths are excused, since a generated file exists on one machine and not on a clean checkout; existence is matched with **exact case**, so a case-insensitive disk and a case-sensitive CI runner give the same answer.
 - **Which files are instructions is data from each tool's docs (ADR-0014).** `_ANY_DIR` lists what tools read in any directory, `_ROOT_ONLY` what they read at the root; both were verified against official docs on 2026-09-24. Names match with **exact case**, dependency and cache folders are skipped, and **gitignored instruction files are left out** - a personal file on one machine must not change the result on CI. A nested file's paths may anchor at the root or its own directory; missing means it anchors in one and exists in neither.
 - **A cited conventional instruction filename or rules-file pattern that is absent is `unresolved`, not missing.** Docs about AI tooling list those names generically. Found by dogfooding - ADDA's own README tripped the rule on its first run, because `.github/` exists for workflows while the Copilot file does not.
+- **Markdown links are checked exactly (ADR-0020).** Inline links, images and reference definitions in instruction files resolve from the file's own folder (a leading `/` is the repo root), so a dead link inside the repo is always `link missing` - no first-segment guess. URLs, schemes and `#anchors` are skipped; `#fragment`/`?query` cut; percent-encoding and `<...>` undone; a link leaving the repo is unresolved. HTML `<a href>` is not read.
 - **It verifies what a file cites, never what it omits.** When `refs.py` was added, `CLAUDE.md`'s module list became incomplete and this check passed. That is the boundary, not a bug.
 
 ## Change Log (newest first)
 
+- [2026-10-02] ENH-ADDA-040 - `extract_links` and `_link_path`: `--refs` checks markdown links in instruction files, reported as `link missing` · the most common way a README cites a file was never read. Idea from studying GIT-387, which drops dead links instead of reporting them. 10 tests; nine mutations, eight caught and one exposing a dead branch, deleted. Across ADDA, its public tree, 5 benchmark and 22 fleet repos: one finding, real - fastapi's generated root README links `tutorial/`, which only exists next to the docs file it was copied from.
 - [2026-09-24] BUG-ADDA-026 - `_example_defs`: names the doc's own fenced examples define are not `ref missing` · fastapi's README defines `is_offer` in a model and then explains it; the name is in no source file, so it was flagged. Definitions only, so a used-not-defined name stays checked. Two mutations (no defs; every name on a defining line) each turned a test red. The same run's other finding is real and kept: fastapi README.md:431 cites `maximum_length`, which exists nowhere in fastapi (the parameter is `max_length`).
 - [2026-09-24] ENH-ADDA-028 - instruction files are discovered by walking the repo against `_ANY_DIR` / `_ROOT_ONLY`, replacing the five-file `INSTRUCTION_FILES` tuple; nested files anchor paths at the root or their own directory; gitignored ones are left out; `_ignored_many` batches `git check-ignore` · other agents' rules files and nested `AGENTS.md`/`CLAUDE.md` were invisible, each list entry verified against official docs first. Also fixes a platform split: `Path.is_file()` read `agents.md` as `AGENTS.md` on Windows only. Five mutations, each caught. On five real repos: finds `date-fns/AGENTS.md` and django's Copilot file; ADDA's own run now reads `docs/public/CLAUDE.md` (4 files, 61 paths, 0 findings).
 - [2026-09-24] ENH-ADDA-028 - `instructions_report` takes `extra`, the project's own instruction files from `MODULE_MAP.json` · ADR-0012 kept the list fixed only because `sync --map` dropped keys it did not generate; that is fixed, so a project can now name an `intent.md` or similar. An absent configured file is reported in `skipped`. Test-first; two mutations (no carry-over, silent absent file) each turned a test red.

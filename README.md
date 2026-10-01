@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="version 0.5.0" src="https://img.shields.io/badge/version-0.5.0-1d9e75">
   <img alt="python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-185fa5">
-  <img alt="tests 184 passing" src="https://img.shields.io/badge/tests-184%20passing-3b6d11">
+  <img alt="tests 194 passing" src="https://img.shields.io/badge/tests-194%20passing-3b6d11">
   <img alt="OKF v0.2" src="https://img.shields.io/badge/OKF-v0.2-534ab7">
   <img alt="provider-agnostic" src="https://img.shields.io/badge/LLM-provider--agnostic-0f6e56">
 </p>
@@ -346,7 +346,7 @@ The same flag checks, when present, the files an agent reads before any code —
 `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` in any directory, the rules folders of
 Cursor, Windsurf, Cline, Roo, Continue, Junie and Amazon Q, Copilot's
 instructions, and `README.md`. Each tool's list comes from its own documentation,
-checked on 2026-09-24. A project adds its own, such as an `intent.md`, by listing them
+checked on 2026-09-24. Markdown links in those files are checked too, resolved from the file's own folder, as a reader's click would be. A project adds its own, such as an `intent.md`, by listing them
 under `"instructions"` in `MODULE_MAP.json`; `sync --map` keeps that setting when
 it regenerates the map, and a listed file that does not exist is reported, not
 skipped. When

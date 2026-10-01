@@ -26,10 +26,12 @@ counted as a pass.
 import builtins
 import keyword
 import os
+import posixpath
 import re
 import subprocess
 from fnmatch import fnmatchcase
 from pathlib import Path
+from urllib.parse import unquote
 
 from adda.modulemap import load_map
 from adda.sync import IGNORE_DIRS, SOURCE_SUFFIXES
@@ -313,6 +315,50 @@ def extract_paths(text: str) -> list[tuple[int, str]]:
     return out
 
 
+# ENH-ADDA-040: `[text](target)`, `![alt](src)` and `[id]: target`. An optional
+# "title" may follow the target; `<...>` wraps a target containing spaces.
+_TITLE = r"""(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?"""
+_INLINE_LINK = re.compile(r"!?\[[^\]]*\]\(\s*(<[^>]*>|[^)\s]+)" + _TITLE + r"\s*\)")
+_REF_DEF = re.compile(r"^\s{0,3}\[[^\]]+\]:\s*(<[^>]*>|\S+)" + _TITLE + r"\s*$")
+_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:|^//")
+
+
+def extract_links(text: str) -> list[tuple[int, str]]:
+    """(line number, target) for every markdown link to a file, on a live line.
+
+    URLs, `mailto:` and other schemes, and `#anchors` are not files. A link
+    written inside a code span is an example of syntax, not a link. The
+    `#fragment` and `?query` are cut; the target is otherwise as written.
+    """
+    out = []
+    for number, line in _live_lines(text):
+        prose = _SPAN.sub("", line)
+        targets = _INLINE_LINK.findall(prose)
+        ref_def = _REF_DEF.match(prose)
+        if ref_def:
+            targets.append(ref_def.group(1))
+        for target in targets:
+            target = target.strip("<>").strip()
+            if not target or target.startswith("#") or _SCHEME.match(target):
+                continue
+            target = re.split(r"[#?]", target, maxsplit=1)[0]
+            if target:
+                out.append((number, target))
+    return out
+
+
+def _link_path(source: str, target: str):
+    """Repo-relative path a link points at, or None if it leaves the repo.
+
+    Markdown resolves a link against the file it is written in; a leading `/`
+    means the repository root, as code hosts render it - `join` already treats
+    an absolute target that way, so stripping the slash makes it repo-relative.
+    """
+    joined = posixpath.join(posixpath.dirname(source), unquote(target))
+    path = posixpath.normpath(joined).lstrip("/")
+    return None if path == ".." or path.startswith("../") else path
+
+
 def _exists_exact(repo: Path, rel: str) -> bool:
     """True only if every segment matches on disk with the exact case.
 
@@ -421,6 +467,20 @@ def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:
                 findings.append({
                     "item": f"{rel}:{line}", "issue": "path missing",
                     "severity": "medium", "ref": path,
+                })
+        # ENH-ADDA-040: a markdown link names its file exactly, relative to this
+        # file, so unlike a backticked path it needs no first-segment guess.
+        # A link out of the repository is the one thing it cannot check.
+        for line, target in extract_links(text):
+            path = _link_path(rel, target)
+            if path is None:
+                stats["unresolved"] += 1
+                continue
+            stats["paths"] += 1
+            if path != "." and not (_exists_exact(repo, path) or _ignored(repo, path)):
+                findings.append({
+                    "item": f"{rel}:{line}", "issue": "link missing",
+                    "severity": "medium", "ref": target,
                 })
 
     if unreadable:

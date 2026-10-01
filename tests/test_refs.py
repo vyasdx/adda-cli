@@ -15,7 +15,13 @@ from typer.testing import CliRunner
 
 from adda.cli import app
 from adda.modulemap import MAP_FILENAME
-from adda.refs import extract_paths, extract_refs, instructions_report, refs_report
+from adda.refs import (
+    extract_links,
+    extract_paths,
+    extract_refs,
+    instructions_report,
+    refs_report,
+)
 
 runner = CliRunner()
 
@@ -401,6 +407,84 @@ def test_listing_the_conventional_instruction_filenames_is_not_a_claim_they_exis
     findings, _, stats = instructions_report(tmp_path)
     assert findings == []
     assert stats["unresolved"] == 3 and stats["paths"] == 0
+
+
+# --- ENH-ADDA-040: markdown links --------------------------------------------
+#
+# `[text](path)` is the most common way a README or AGENTS.md cites a file, and
+# the backtick-only check never saw it. Idea taken from studying GIT-387, which
+# parses these links and silently DROPS the dead ones; here they are reported.
+
+
+def _links(findings):
+    return sorted((f["item"], f["ref"]) for f in findings if f["issue"] == "link missing")
+
+
+def test_dead_markdown_link_is_reported_with_its_line(tmp_path):
+    _repo(tmp_path, {"src/app.py": "", "docs/setup.md": "x"},
+          {"README.md": "# Readme\n\nSee [setup](docs/setup.md) and [old](docs/gone.md).\n"})
+    findings, _, stats = instructions_report(tmp_path)
+    assert _links(findings) == [("README.md:3", "docs/gone.md")]
+    assert stats["paths"] == 2
+
+
+def test_link_resolves_from_the_files_own_directory(tmp_path):
+    # Markdown's rule, unlike a backticked path: the target is relative to the
+    # file the link is written in.
+    _repo(tmp_path, {"src/app.py": "", "pkg/guide.md": "x"},
+          {"pkg/AGENTS.md": "[guide](guide.md) [up](../src/app.py) [miss](notes.md)\n"})
+    assert _links(instructions_report(tmp_path)[0]) == [("pkg/AGENTS.md:1", "notes.md")]
+
+
+def test_leading_slash_link_means_the_repo_root(tmp_path):
+    _repo(tmp_path, {"src/app.py": ""}, {"pkg/CLAUDE.md": "[app](/src/app.py) [x](/src/gone.py)\n"})
+    assert _links(instructions_report(tmp_path)[0]) == [("pkg/CLAUDE.md:1", "/src/gone.py")]
+
+
+def test_urls_anchors_and_queries_are_not_files(tmp_path):
+    readme = ("[site](https://example.com/a.md) [mail](mailto:x@y.z) [top](#install) "
+              "[sec](docs/setup.md#usage) [q](docs/setup.md?raw=1) [proto](//cdn.example.com/x.js)\n")
+    _repo(tmp_path, {"src/app.py": "", "docs/setup.md": "x"}, {"README.md": readme})
+    findings, _, stats = instructions_report(tmp_path)
+    assert _links(findings) == [] and stats["paths"] == 2
+
+
+def test_percent_encoded_and_angle_bracket_targets_resolve(tmp_path):
+    _repo(tmp_path, {"src/app.py": "", "docs/my notes.md": "x"},
+          {"README.md": "[a](docs/my%20notes.md) [b](<docs/my notes.md>)\n"})
+    assert _links(instructions_report(tmp_path)[0]) == []
+
+
+def test_link_leaving_the_repository_is_unresolved_not_missing(tmp_path):
+    _repo(tmp_path, {"src/app.py": ""}, {"README.md": "[sibling](../other-repo/README.md)\n"})
+    findings, _, stats = instructions_report(tmp_path)
+    assert findings == [] and stats["unresolved"] == 1
+
+
+def test_images_and_reference_definitions_are_links_too(tmp_path):
+    readme = "![logo](assets/logo.svg)\n\n[spec]: docs/spec.md\n[ok]: docs/setup.md \"Setup\"\n"
+    _repo(tmp_path, {"src/app.py": "", "docs/setup.md": "x"}, {"README.md": readme})
+    assert _links(instructions_report(tmp_path)[0]) == [
+        ("README.md:1", "assets/logo.svg"), ("README.md:3", "docs/spec.md"),
+    ]
+
+
+def test_links_in_code_spans_fences_and_history_are_not_checked(tmp_path):
+    readme = ("Write `[x](missing.md)` to link.\n\n```\n[y](missing.md)\n```\n\n"
+              "## Change Log\n\n- [z](missing.md) was removed\n")
+    _repo(tmp_path, {"src/app.py": ""}, {"README.md": readme})
+    assert _links(instructions_report(tmp_path)[0]) == []
+
+
+def test_link_to_a_gitignored_file_is_excused(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    _repo(tmp_path, {"src/app.py": "", ".gitignore": "okf.json\n"}, {"README.md": "[out](okf.json)\n"})
+    assert _links(instructions_report(tmp_path)[0]) == []
+
+
+def test_extract_links_returns_targets_as_written():
+    text = "[a](x.md) and ![b](<y z.png> \"t\")\n`[c](no.md)`\n[d]: w.md\n"
+    assert extract_links(text) == [(1, "x.md"), (1, "y z.png"), (3, "w.md")]
 
 
 # --- BUG-ADDA-026: names the doc's own example defines ----------------------
