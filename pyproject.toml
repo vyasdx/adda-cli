@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "adda"
-version = "0.5.0"
+version = "0.5.1"
 description = "ADDA — anti-drift architecture memory + OKF + Context Sentinel for AI-assisted development."
 readme = "README.md"
 requires-python = ">=3.10"

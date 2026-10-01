@@ -2,4 +2,4 @@
 # Coded by - Claude Code
 """ADDA — anti-drift architecture memory, OKF compiler, and Context Sentinel."""
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
