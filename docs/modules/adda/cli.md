@@ -3,7 +3,7 @@
 
 # `cli` - `src/adda/cli.py`
 
-Last verified: 2026-09-24
+Last verified: 2026-10-02
 
 **Purpose** - ADDA's only entrypoint - the Typer app that wires the fifteen commands to the library modules.
 
@@ -39,6 +39,7 @@ Last verified: 2026-09-24
 
 ## Change Log (newest first)
 
+- [2026-10-02] ENH-ADDA-043 - `sync --map --out` computes `declared_docs` once, passes it to `module_map_json`, and prints how many new entries point at a doc that already names the file · the count is only printed with `--out`, so `sync --map > file` stays clean JSON.
 - [2026-09-24] ENH-ADDA-031 - added `restated` · a corrected fact left standing elsewhere was found only by hand. Groups current files and dated records, prints on every run that it finds copies and not paraphrases, and fails clearly outside a git repo or on an unknown commit.
 - [2026-09-24] ENH-ADDA-029 - added `memory` · agent memory drifts like docs (BUG-ADDA-024, RF-ADDA-009, both found by hand). Prints what it checked, one line per finding, `--json` for scripts; a path that is not a directory exits 1 with a clear message.
 - [2026-09-24] BUG-ADDA-027 - `hook install` asks `hook.hooks_dir` where git reads hooks instead of assuming `.git/hooks`, creates it if needed, names a custom `core.hooksPath` in its output and points at `adda doctor` · a husky-style repo got a gate git never ran.

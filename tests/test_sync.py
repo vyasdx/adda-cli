@@ -360,6 +360,93 @@ def test_an_exempt_pattern_wins_over_an_older_map_entry(tmp_path):
     assert data["map"] == {"src/lib.ts": "docs/modules/lib.md"}
 
 
+# --- ENH-ADDA-043: a doc that names its file claims it ------------------------
+#
+# Fleet module docs already list their files (`## Files`, `**File:**`). Scoped
+# against ADDA's own map (4/4) and a hand-checked fleet sample (24/24) before
+# being built; history co-change, the idea it replaced, covered 0-13 files a repo.
+
+
+def _src(root, *paths):
+    for rel in paths:
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("x = 1\n", encoding="utf-8")
+
+
+def _doc(root, rel, text):
+    p = root / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8")
+
+
+def test_new_code_maps_to_the_one_doc_that_names_it(tmp_path):
+    _src(tmp_path, "src/lib/auth.ts", "src/lib/other.ts")
+    _doc(tmp_path, "docs/modules/admin-auth.md", "# Admin auth\n\n- **File:** `src/lib/auth.ts` (~75 LOC)\n")
+    data = _regen(tmp_path, {"map": {}, "exempt": []})
+    assert data["map"] == {
+        "src/lib/auth.ts": "docs/modules/admin-auth.md",   # named by its doc
+        "src/lib/other.ts": "docs/modules/lib/other.md",   # nobody names it: mirrored default
+    }
+
+
+def test_a_file_named_by_two_docs_keeps_the_default(tmp_path):
+    _src(tmp_path, "src/core.py")
+    _doc(tmp_path, "docs/modules/a.md", "## Files\n\n| `src/core.py` | 40 |\n")
+    _doc(tmp_path, "docs/modules/b.md", "Calls into `src/core.py`.\n")
+    assert _regen(tmp_path, {"map": {}, "exempt": []})["map"] == {"src/core.py": "docs/modules/core.md"}
+
+
+def test_a_choice_already_in_the_map_wins_over_a_naming_doc(tmp_path):
+    _src(tmp_path, "src/core.py")
+    _doc(tmp_path, "docs/modules/core-engine.md", "`src/core.py`\n")
+    data = _regen(tmp_path, {"map": {"src/core.py": "docs/modules/hand-picked.md"}, "exempt": []})
+    assert data["map"] == {"src/core.py": "docs/modules/hand-picked.md"}
+
+
+def test_an_exempt_pattern_wins_over_a_naming_doc(tmp_path):
+    _src(tmp_path, "src/gen/model.py", "src/core.py")
+    _doc(tmp_path, "docs/modules/gen.md", "`src/gen/model.py`\n")
+    data = _regen(tmp_path, {"map": {}, "exempt": ["src/gen/*"]})
+    assert "src/gen/model.py" not in data["map"]
+
+
+def test_history_fences_and_gone_lines_do_not_claim_a_file(tmp_path):
+    # A Change Log saying "moved `x.py` elsewhere" must not claim `x.py`.
+    _src(tmp_path, "src/a.py", "src/b.py", "src/c.py")
+    _doc(tmp_path, "docs/modules/old.md",
+         "# Old\n\n```\n`src/a.py`\n```\n\n`src/b.py` was removed from here.\n\n"
+         "## Change Log\n\n- moved `src/c.py` out\n")
+    data = _regen(tmp_path, {"map": {}, "exempt": []})
+    assert data["map"] == {
+        "src/a.py": "docs/modules/a.md", "src/b.py": "docs/modules/b.md", "src/c.py": "docs/modules/c.md",
+    }
+
+
+def test_only_docs_in_the_module_doc_folder_claim_files(tmp_path):
+    # One outside doc only: two would cancel each other out as "named twice"
+    # and pass this test for the wrong reason (a mutation run caught that).
+    _src(tmp_path, "src/core.py")
+    _doc(tmp_path, "docs/handover.md", "Edited `src/core.py` today.\n")
+    assert _regen(tmp_path, {"map": {}, "exempt": []})["map"] == {"src/core.py": "docs/modules/core.md"}
+
+
+def test_line_suffix_and_leading_slash_still_name_the_file(tmp_path):
+    _src(tmp_path, "src/a.py", "src/b.py")
+    _doc(tmp_path, "docs/modules/x.md", "`src/a.py:12` and `/src/b.py`\n")
+    data = _regen(tmp_path, {"map": {}, "exempt": []})
+    assert data["map"] == {"src/a.py": "docs/modules/x.md", "src/b.py": "docs/modules/x.md"}
+
+
+def test_sync_says_how_many_entries_came_from_naming_docs(tmp_path):
+    _src(tmp_path, "src/a.py", "src/b.py")
+    _doc(tmp_path, "docs/modules/x.md", "`src/a.py`\n")
+    out = tmp_path / "adda" / "MODULE_MAP.json"
+    res = runner.invoke(app, ["sync", str(tmp_path), "--map", "--out", str(out)])
+    assert res.exit_code == 0
+    assert "1 new entr(ies) point at the module doc that already names the file" in res.stdout
+
+
 def test_stale_exact_exempt_path_is_dropped_but_a_pattern_is_kept(tmp_path):
     (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
     data = _regen(tmp_path, {"map": {}, "exempt": ["deleted.py", "vendor/*"]})

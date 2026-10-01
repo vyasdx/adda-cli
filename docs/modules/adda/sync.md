@@ -3,13 +3,13 @@
 
 # `sync` - `src/adda/sync.py`
 
-Last verified: 2026-09-29
+Last verified: 2026-10-02
 
 **Purpose** - Derive an ADDA architecture *skeleton* from a codebase, so the docs can be refreshed instead of rotting.
 
 ## Public surface
 
-`source_roots(repo, include) -> (files, excluded)` (**the shared definition of documentable source, used by `audit` too**) · `source_files(repo, include) -> list[str]` · `discover_modules(repo) -> [(name, posix path)]` · `discover_deps(repo)` · `skeleton_markdown(repo)` · `module_map_json(repo, doc_dir, include, keep)`
+`source_roots(repo, include) -> (files, excluded)` (**the shared definition of documentable source, used by `audit` too**) · `source_files(repo, include) -> list[str]` · `discover_modules(repo) -> [(name, posix path)]` · `discover_deps(repo)` · `skeleton_markdown(repo)` · `module_map_json(repo, doc_dir, include, keep, declared)` · `declared_docs(repo, files, doc_dir) -> {code: doc}`
 
 ## Invariants
 
@@ -21,11 +21,13 @@ Last verified: 2026-09-29
 - **Tool configuration is not a documentable module.** Dotfiles and `*.config.*` are filtered, `setup.py`/`conftest.py` land in `exempt` - visible, not dropped. Mapping the repo root made this reachable for the first time.
 - A root-level `adda/` is the scaffolded *data* dir and is skipped - but `src/adda` (the package) is kept.
 - **Regenerating the map keeps a product's choices (ADR-0019).** An existing entry is kept while its code exists, so hand-named docs survive; only code the map has never seen gets a mirrored path. A hand-written exempt pattern is kept and wins over an older map entry; an exact exempt path whose file is gone is dropped. Delete the file to start over.
+- **New code goes to the one module doc that names it (ADR-0021).** `declared_docs` reads live lines of docs under `doc_dir` for a backticked existing source path (a `:line` suffix and leading `/` allowed); a file named by exactly one doc is claimed by it, a file named by two is left to the mirrored default. Precedence: written exemption > the map's previous entry > generated exemption > naming doc > mirrored path.
 - **Regenerating the map keeps every key it does not generate.** `map` and `exempt` are regenerated as the bullet above describes; anything else in the previous file (`include`, `instructions`, or a key a later version adds) is carried over verbatim. A setting that a routine regenerate erases is not a setting.
 - Dependencies are read from `pyproject.toml` or `package.json`.
 
 ## Change Log (newest first)
 
+- [2026-10-02] ENH-ADDA-043 - added `declared_docs`; `module_map_json` takes `declared` and sends code it has never mapped to the one module doc that names it · fleet docs already list their files, and the rollout trial started at 0 of 119 entries matching. Scoped first (it replaced ENH-ADDA-041 co-change, which covered 0-13 files a repo): 4/4 against ADDA's map, 24/24 hand-checked. 8 tests; 8 mutations caught after one weak test was fixed. On 12 fleet copies: 37-88% of code files now point at an existing doc in nine; ADDA's own map unchanged.
 - [2026-09-29] ENH-ADDA-034 - `module_map_json` keeps previous `map` entries whose code exists and hand-written `exempt` patterns, with an exempt pattern winning over an older entry · on a real fleet repo 0 of 119 generated paths matched its 60 hand-named docs, and every hand-pointed entry was lost on the next regenerate. The trial also found the precedence bug (exempting pages left them mapped), fixed test-first. Five mutations caught.
 - [2026-09-24] ENH-ADDA-028 - `module_map_json` takes `keep`, the previous map, and carries over every key it does not generate · only `include` used to survive `sync --map`, so any other setting vanished on the next regenerate and the check it configured stopped running without a word. This is what kept ADR-0012's instruction-file list unconfigurable.
 - [2026-08-26] DEC-ADDA-009 / BUG-ADDA-018/019/020 - `source_files` became `source_roots`, returning `(files, excluded)`, and loose files at the base dir are now mapped · discovery walked directories only, so a flat repo mapped NOTHING and `audit` reported "No doc drift" over a project with zero docs, while `src/loose.py` stayed invisible beside `src/pkg/`. The `__init__.py` heuristic is kept but no longer silent, and `include` overrules it. Mapping the root exposed JS tool config, now filtered.

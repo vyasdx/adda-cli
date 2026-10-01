@@ -275,7 +275,7 @@ def sync(
     ),
 ) -> None:
     """Derive an ARCHITECTURE skeleton (or, with --map, the code->doc map)."""
-    from adda.sync import module_map_json
+    from adda.sync import declared_docs, module_map_json, source_files
 
     previous = {}
     if map_ and out is not None and out.is_file():
@@ -288,15 +288,24 @@ def sync(
         if not isinstance(previous, dict):
             previous = {}  # valid JSON but not a map: same
 
-    text = (
-        module_map_json(repo, include=previous.get("include") or None, keep=previous)
-        if map_ else skeleton_markdown(repo)
-    )
+    named = {}
+    if map_:
+        include = previous.get("include") or None
+        # ENH-ADDA-043: computed once here so the count below matches what was written.
+        named = declared_docs(repo, source_files(repo, include))
+        text = module_map_json(repo, include=include, keep=previous, declared=named)
+    else:
+        text = skeleton_markdown(repo)
     label = "MODULE_MAP" if map_ else "skeleton"
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(text + "\n", encoding="utf-8")
         typer.secho(f"Wrote {label} -> {out}", fg=typer.colors.GREEN)
+        old = previous.get("map") if isinstance(previous.get("map"), dict) else {}
+        written = json.loads(text)["map"] if map_ else {}
+        took = sum(1 for code, doc in named.items() if code not in old and written.get(code) == doc)
+        if took:
+            typer.echo(f"{took} new entr(ies) point at the module doc that already names the file.")
     else:
         typer.echo(text)
 

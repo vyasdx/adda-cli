@@ -232,11 +232,45 @@ def source_files(repo: Path, include=None) -> list:
     return source_roots(repo, include)[0]
 
 
+def declared_docs(repo: Path, files, doc_dir: str = "docs/modules") -> dict:
+    """{code path: doc} for each source file exactly one module doc names (ENH-ADDA-043).
+
+    Fleet module docs already list their files (`## Files`, `**File:**`), so the
+    doc's own statement is the best guess at where a file belongs - scoped at 4/4
+    against ADDA's map and 24/24 on a hand-checked fleet sample. A file named by
+    two docs stays unclaimed: the rule cannot tell which one owns it.
+
+    Only docs under `doc_dir` count (a handover that mentions a file is not its
+    doc), and only live lines: a Change Log saying "moved `x.py` out" must not
+    claim `x.py` - the same filter `audit --refs` reads with.
+    """
+    from adda.refs import _SPAN, _live_lines  # refs imports sync; import here, not at the top
+
+    root = repo / doc_dir
+    if not root.is_dir():
+        return {}
+    codes, cites = set(files), {}
+    for doc in sorted(root.rglob("*.md")):
+        try:
+            text = doc.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        rel_doc = doc.relative_to(repo).as_posix()
+        for _, line in _live_lines(text):
+            for span in _SPAN.findall(line):
+                words = span.split()
+                cited = words[0].split(":")[0].lstrip("/") if words else ""
+                if cited in codes:
+                    cites.setdefault(cited, set()).add(rel_doc)
+    return {code: next(iter(docs)) for code, docs in cites.items() if len(docs) == 1}
+
+
 def _slash(path: str) -> str:
     return path.replace("\\", "/").strip("/")
 
 
-def module_map_json(repo: Path, doc_dir: str = "docs/modules", include=None, keep=None) -> str:
+def module_map_json(repo: Path, doc_dir: str = "docs/modules", include=None, keep=None,
+                    declared=None) -> str:
     """Derive MODULE_MAP.json content: every source .py -> its module doc.
 
     The doc path MIRRORS the source path (minus a leading `src/`), so
@@ -262,12 +296,19 @@ def module_map_json(repo: Path, doc_dir: str = "docs/modules", include=None, kee
     those choices on every regenerate made the map unusable. An entry is kept
     while its code exists; only code the map has never seen gets a generated
     path. A hand-written exempt pattern is kept and wins over an older map entry;
-    an exact exempt path whose file is gone is dropped. Delete the file to regenerate from scratch.
+    an exact exempt path whose file is gone is dropped. Delete the file to
+    regenerate from scratch.
+
+    Code the map has never seen goes to the one module doc that already names it
+    (`declared`, from `declared_docs`), and only otherwise to the mirrored path
+    (ENH-ADDA-043). A product's own choice and its exemptions still come first.
     """
     previous = (keep or {}).get("map")
     previous = {_slash(k): v for k, v in previous.items()} if isinstance(previous, dict) else {}
     written = [_slash(e) for e in ((keep or {}).get("exempt") or []) if isinstance(e, str)]
     files = source_files(repo, include)
+    if declared is None:
+        declared = declared_docs(repo, files, doc_dir)
     mapping, exempt = {}, []
     for rel in files:
         if is_exempt(rel, written):
@@ -277,6 +318,9 @@ def module_map_json(repo: Path, doc_dir: str = "docs/modules", include=None, kee
             continue
         if rel.rsplit("/", 1)[-1] in MAP_EXEMPT_NAMES:
             exempt.append(rel)
+            continue
+        if rel in declared:
+            mapping[rel] = declared[rel]  # the doc that already names this file
             continue
         # mirror the path, not just the stem - see the docstring
         stem_path = rel[4:] if rel.startswith("src/") else rel
