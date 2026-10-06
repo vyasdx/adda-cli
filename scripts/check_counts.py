@@ -14,8 +14,8 @@ Two counts are checked:
   `src/adda/__init__.py`, `adda/VERSION.md` and the README badge. A release
   publishes an immutable version number, so a disagreement between them is
   worse than a stale badge
-- any `<dir>/status.md` that claims "N open work items", against the `issues.md`
-  beside it. Discovered by glob rather than by naming a directory, so this file
+- any `<dir>/status.md` that claims "N open work items", against the items under
+  `## Open` in the `issues.md` beside it. Discovered by glob rather than by naming a directory, so this file
   stays publishable and works in any repo that keeps a tracker that way.
 
 It REPORTS and FAILS rather than rewriting the files. Auto-correcting a stale
@@ -94,36 +94,51 @@ def check_version() -> list:
 def check_open_items() -> list:
     """Cross-check every tracker that publishes an open-item count.
 
-    A `## Active` row whose Status cell starts with "open" is live work;
-    the rest are accepted decisions kept as a record. The rule is structural,
-    not positional — mixing live work with history in one table is exactly how
-    14 closed rows once hid inside it (RF-ADDA-008).
+    The tracker follows the fleet standard (ENH-VOFC-188): every `### ID · title`
+    under `## Open` is live work, and its backticked label line must say
+    `status:open`, `in-progress` or `blocked`. Decisions and closed items live in
+    their own sections, so they cannot be counted by mistake — mixing live work
+    with history in one table is how 14 closed rows once hid (RF-ADDA-008).
+
+    A tracker this cannot read FAILS. It used to skip when its sections were
+    missing, so a reformatted file would have turned the check off in silence.
     """
     problems = []
     for status in sorted(ROOT.glob("*/status.md")):
-        issues = status.with_name("issues.md")
-        if not issues.is_file():
-            continue
         claimed = re.findall(
             r"\*\*(\d+) open work items?\.?\*\*", status.read_text(encoding="utf-8")
         )
         if not claimed:
             continue  # states no count; nothing to contradict
-        text = issues.read_text(encoding="utf-8")
-        if "## Active" not in text or "## Recently Closed" not in text:
+        rel = status.relative_to(ROOT).as_posix()
+        issues = status.with_name("issues.md")
+        if not issues.is_file():
+            problems.append(f"{rel} claims a count but there is no {issues.name} beside it")
             continue
-        active = text[text.index("## Active"):text.index("## Recently Closed")]
-        live = [
-            ln for ln in active.splitlines()
-            if ln.startswith("| ")
-            and ln.rsplit("|", 2)[-2].strip().lower().startswith("open")
-        ]
+        lines = issues.read_text(encoding="utf-8").splitlines()
+        heads = [i for i, ln in enumerate(lines) if ln.startswith("## ")]
+        names = [lines[i][3:].strip() for i in heads]
+        missing = [s for s in ("Open", "Closed") if s not in names]
+        if missing:
+            problems.append(f"{issues.name} has no {' / '.join('## ' + s for s in missing)} section")
+            continue
+        start = heads[names.index("Open")]
+        end = next((i for i in heads if i > start), len(lines))
+        live = 0
+        for i in range(start + 1, end):
+            if not lines[i].startswith("### "):
+                continue
+            live += 1
+            label = next((ln for ln in lines[i + 1:end] if ln.strip()), "")
+            m = re.search(r"\bstatus:([\w-]+)", label)
+            if not m or m.group(1) not in ("open", "in-progress", "blocked"):
+                problems.append(
+                    f"{issues.name}:{i + 1} sits under ## Open with status "
+                    f"{m.group(1) if m else '(none)'}"
+                )
         n = int(claimed[0])  # newest entry sits at the top
-        if n != len(live):
-            rel = status.relative_to(ROOT).as_posix()
-            problems.append(
-                f"{rel} claims {n} open work items; {issues.name} has {len(live)}"
-            )
+        if n != live:
+            problems.append(f"{rel} claims {n} open work items; {issues.name} has {live}")
     return problems
 
 
