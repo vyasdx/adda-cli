@@ -2,7 +2,15 @@
 # Coded by - Claude Code
 """Context Sentinel threshold + token-counting fallback tests (spec §6)."""
 
-from adda.sentinel import ContextSentinel, count_tokens
+from adda.sentinel import DEFAULT_LIMIT, ContextSentinel, count_tokens, limit_for
+
+
+def test_limit_for_5x_models():
+    # FIX-011: the 5.x models have a 1M window; unlisted ids fell back to 200k.
+    for model in ("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"):
+        assert limit_for(model) == 1_000_000
+    assert limit_for("claude-haiku-4-5") == 200_000
+    assert limit_for("not-a-model") == DEFAULT_LIMIT
 
 
 def test_thresholds():
