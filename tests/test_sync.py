@@ -738,7 +738,7 @@ def _map_file(root, data, name="docs/MODULE_MAP-PRODUCT.json"):
 
 
 def test_owns_globs_cover_the_text_files_under_them_not_binaries(tmp_path):
-    # VoiceForgeAI's shape: modules[{doc, owns: [globs]}].
+    # One fleet shape: modules[{doc, owns: [globs]}].
     _git_repo(tmp_path)
     _tree(tmp_path, ["app/pilot/page.tsx", "app/pilot/style.css", "prisma/schema.prisma", "public/brand/logo.png"])
     (tmp_path / "public" / "brand" / "logo.png").write_bytes(b"\x89PNG\x00\x00binary")
@@ -754,7 +754,7 @@ def test_owns_globs_cover_the_text_files_under_them_not_binaries(tmp_path):
 
 
 def test_covers_lists_import_and_ignored_files_become_exemptions(tmp_path):
-    # LinuxDiag's shape: modules[{doc, covers}] + ignored.files_outside_adda.
+    # Another: modules[{doc, covers}] + ignored.files_outside_adda.
     _tree(tmp_path, ["analyzer.py", "parsers/cpu.py", "generate_doc.py"])
     src = _map_file(tmp_path, {
         "modules": [{"doc": "docs/modules/analyzer.md", "covers": ["analyzer.py", "parsers/cpu.py"]}],
@@ -765,7 +765,7 @@ def test_covers_lists_import_and_ignored_files_become_exemptions(tmp_path):
 
 
 def test_file_entries_import_scripts_and_config_that_sync_never_maps(tmp_path):
-    # Growth-Engine's shape: modules[{file, doc}]; its code lives in scripts/,
+    # Another: modules[{file, doc}], from a product whose code lives in scripts/,
     # which sync skips by design - an imported choice is kept regardless.
     _tree(tmp_path, ["n8n/flow.js", "scripts/radar-feed.py", "core/airtable-schema.json"])
     src = _map_file(tmp_path, {"modules": [
@@ -777,7 +777,7 @@ def test_file_entries_import_scripts_and_config_that_sync_never_maps(tmp_path):
 
 
 def test_a_section_for_another_repository_is_named_not_imported(tmp_path):
-    # SEO_GEO's shape: repos{name: {root, modules[{code, doc}]}}; one root is
+    # Another: repos{name: {root, modules[{code, doc}]}}; one root is
     # this repo, the other a different checkout entirely.
     _tree(tmp_path, ["src/lib/registry.ts", "index.js"])
     src = _map_file(tmp_path, {"repos": {
