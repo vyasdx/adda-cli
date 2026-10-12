@@ -42,6 +42,11 @@ from adda.sync import IGNORE_DIRS, SOURCE_SUFFIXES
 # test helper or a script. Searching more code can only turn a flag into a pass,
 # which is the safe direction for a rule whose failure mode is false alarms.
 _CORPUS_SKIP = IGNORE_DIRS - {"tests", "test", "scripts", "examples"}
+# BUG-ADDA-030: a name is defined wherever the project defines it - a SQL
+# migration, a Prisma schema, a shell script, a workflow - not only in source
+# code. Prose is the one exception: a doc must not vouch for its own citation.
+_PROSE_SUFFIXES = (".md", ".mdx", ".markdown", ".rst", ".txt", ".adoc")
+_CORPUS_MAX_BYTES = 1_000_000  # a vendored bundle or dump is not a definition
 
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
@@ -152,13 +157,17 @@ def _code_names(repo: Path):
     for dirpath, dirnames, filenames in os.walk(repo):
         dirnames[:] = [d for d in dirnames if d not in _CORPUS_SKIP and not d.startswith(".")]
         for filename in filenames:
-            if not filename.endswith(SOURCE_SUFFIXES):
+            if filename.lower().endswith(_PROSE_SUFFIXES):
                 continue
+            path = Path(dirpath) / filename
             try:
-                text = (Path(dirpath) / filename).read_text(encoding="utf-8")
+                if path.stat().st_size > _CORPUS_MAX_BYTES:
+                    continue
+                text = path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
-                continue
-            files += 1
+                continue  # binary or unreadable: defines nothing a doc can cite
+            if filename.endswith(SOURCE_SUFFIXES):
+                files += 1  # "is there code at all" still means source code
             names.update(_IDENT.findall(text))
     return names if files else None
 
@@ -457,6 +466,11 @@ def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:
             # name, generically. Citing one is not a claim that it exists here -
             # found when ADDA's own README tripped this rule on its first run.
             first = path.split("/")[0]
+            if first == ".git":
+                # BUG-ADDA-030: git's own directory is local machine state (an
+                # installed hook), never part of the tree. It cannot be decided.
+                stats["unresolved"] += 1
+                continue
             anchored = [f"{b}/{path}" if b else path for b in bases
                         if _exists_exact(repo, f"{b}/{first}" if b else first)]
             if not anchored or (_generic(path) and not _exists_exact(repo, path)):

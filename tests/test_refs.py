@@ -618,3 +618,55 @@ def test_audit_refs_reads_instruction_files_named_in_the_map(tmp_path):
     target.write_text(json.dumps({**data, "instructions": ["intent.md"]}), encoding="utf-8")
     res = runner.invoke(app, ["audit", str(tmp_path), "--refs"])
     assert res.exit_code == 1 and "intent.md:1" in res.stdout
+
+
+# --- BUG-ADDA-030: names are defined beyond source code; .git/ is not the tree ---
+
+
+def test_name_defined_only_in_a_sql_migration_counts(tmp_path):
+    # BloomAI's docs cite its row-level-security policies, which live in SQL.
+    _project(tmp_path, "Admins pass `school_admin_all`.\n",
+             extra={"supabase/migrations/003.sql": "CREATE POLICY school_admin_all ON schools;\n"})
+    assert refs_report(tmp_path, tmp_path / "adda")[0] == []
+
+
+def test_name_defined_only_in_a_prisma_schema_counts(tmp_path):
+    _project(tmp_path, "Sessions are `RefreshToken` rows.\n",
+             extra={"prisma/schema.prisma": "model RefreshToken {\n  id String @id\n}\n"})
+    assert refs_report(tmp_path, tmp_path / "adda")[0] == []
+
+
+def test_name_defined_only_in_a_shell_script_counts(tmp_path):
+    _project(tmp_path, "Set `DM_BACKUP_REMOTE` first.\n",
+             extra={"scripts/backup.sh": 'DM_BACKUP_REMOTE="${DM_BACKUP_REMOTE:-}"\n'})
+    assert refs_report(tmp_path, tmp_path / "adda")[0] == []
+
+
+def test_prose_elsewhere_cannot_vouch_for_a_cited_name(tmp_path):
+    # A README repeating the name is another citation, not a definition.
+    _project(tmp_path, "Calls `ghost_helper`.\n",
+             extra={"README.md": "We call `ghost_helper` here too.\n", "notes/plan.txt": "ghost_helper\n"})
+    assert _missing(refs_report(tmp_path, tmp_path / "adda")[0]) == ["ghost_helper"]
+
+
+def test_a_huge_generated_file_is_not_a_definition(tmp_path):
+    bundle = "var ghost_helper;\n" + "x" * 1_000_001
+    _project(tmp_path, "Calls `ghost_helper`.\n", extra={"src/pkg/vendor.min.js": bundle})
+    assert _missing(refs_report(tmp_path, tmp_path / "adda")[0]) == ["ghost_helper"]
+
+
+def test_config_without_any_source_is_still_skipped_not_passed(tmp_path):
+    _project(tmp_path, "`compare_commits` and `gone_function`\n",
+             extra={"supabase/migrations/001.sql": "CREATE TABLE compare_commits ();\n"})
+    (tmp_path / "src/pkg/core.py").unlink()
+    (tmp_path / "src/pkg/__init__.py").unlink()
+    findings, skipped, _ = refs_report(tmp_path, tmp_path / "adda")
+    assert findings == [] and any("no source" in s for s in skipped)
+
+
+def test_a_path_into_git_internals_is_unresolved_not_missing(tmp_path):
+    # Fleet CLAUDE.md files name their installed hooks; no clean checkout has them.
+    _repo(tmp_path, {"src/app.py": "x = 1\n", ".git/HEAD": "ref: refs/heads/main\n"},
+          {"CLAUDE.md": "Hooks: `.git/hooks/pre-push` and `.git/hooks/commit-msg`.\n"})
+    findings, _, stats = instructions_report(tmp_path)
+    assert findings == [] and stats["unresolved"] == 2 and stats["paths"] == 0
