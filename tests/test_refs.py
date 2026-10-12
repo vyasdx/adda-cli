@@ -624,7 +624,7 @@ def test_audit_refs_reads_instruction_files_named_in_the_map(tmp_path):
 
 
 def test_name_defined_only_in_a_sql_migration_counts(tmp_path):
-    # BloomAI's docs cite its row-level-security policies, which live in SQL.
+    # The school-analytics app's docs cite its row-level-security policies, which live in SQL.
     _project(tmp_path, "Admins pass `school_admin_all`.\n",
              extra={"supabase/migrations/003.sql": "CREATE POLICY school_admin_all ON schools;\n"})
     assert refs_report(tmp_path, tmp_path / "adda")[0] == []

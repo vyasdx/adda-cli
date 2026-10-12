@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="version 0.5.1" src="https://img.shields.io/badge/version-0.5.1-1d9e75">
   <img alt="python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-185fa5">
-  <img alt="tests 217 passing" src="https://img.shields.io/badge/tests-217%20passing-3b6d11">
+  <img alt="tests 227 passing" src="https://img.shields.io/badge/tests-227%20passing-3b6d11">
   <img alt="OKF v0.2" src="https://img.shields.io/badge/OKF-v0.2-534ab7">
   <img alt="provider-agnostic" src="https://img.shields.io/badge/LLM-provider--agnostic-0f6e56">
 </p>
@@ -229,6 +229,7 @@ adda checkpoint ./my-project -m "before compact"
 ```bash
 adda sync ./my-project             # derive an ARCHITECTURE skeleton (modules + deps) from the code
 adda sync ./my-project --map       # derive MODULE_MAP.json (code -> doc routing) instead
+adda sync ./my-project --map --from docs/MODULE_MAP.json --out adda/MODULE_MAP.json   # start from a map the project already keeps
 adda diff ./my-project             # detect drift: docs vs actual repo (exit 1 on drift)
 adda eval ./my-project             # rehydration fidelity %
 ```

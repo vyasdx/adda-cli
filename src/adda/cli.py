@@ -273,9 +273,17 @@ def sync(
     map_: bool = typer.Option(
         False, "--map", help="Emit MODULE_MAP.json (code->doc routing) instead of the skeleton."
     ),
+    from_: Optional[Path] = typer.Option(
+        None, "--from",
+        help="With --map: start from a product's existing map (fleet `mappings` or ADDA format).",
+    ),
 ) -> None:
     """Derive an ARCHITECTURE skeleton (or, with --map, the code->doc map)."""
-    from adda.sync import declared_docs, module_map_json, source_files
+    from adda.sync import declared_docs, import_map, module_map_json, source_files
+
+    if from_ is not None and not map_:
+        typer.secho("--from imports a map, so it needs --map.", fg=typer.colors.RED)
+        raise typer.Exit(2)
 
     previous = {}
     if map_ and out is not None and out.is_file():
@@ -287,6 +295,20 @@ def sync(
             previous = {}  # unreadable: regenerate from scratch
         if not isinstance(previous, dict):
             previous = {}  # valid JSON but not a map: same
+
+    imported, notes = {}, []
+    if from_ is not None:
+        # ENH-ADDA-044: a product's own map seeds this one. Anything that cannot
+        # be read stops here - an import that quietly did nothing would leave the
+        # product's choices to be redone by hand without anyone noticing.
+        try:
+            source = json.loads(from_.read_text(encoding="utf-8"))
+            imported, notes = import_map(repo, source, previous.get("include") or None)
+        except (OSError, ValueError) as exc:
+            typer.secho(f"Cannot import {from_}: {exc}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        kept = previous.get("map") if isinstance(previous.get("map"), dict) else {}
+        previous = {**previous, "map": {**imported, **kept}}  # this map's own choices win
 
     named = {}
     if map_:
@@ -301,6 +323,10 @@ def sync(
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(text + "\n", encoding="utf-8")
         typer.secho(f"Wrote {label} -> {out}", fg=typer.colors.GREEN)
+        if from_ is not None:
+            typer.echo(f"Imported {len(imported)} entr(ies) from {from_}.")
+            for note in notes:
+                typer.secho(f"  {note}", fg=typer.colors.YELLOW)
         old = previous.get("map") if isinstance(previous.get("map"), dict) else {}
         written = json.loads(text)["map"] if map_ else {}
         took = sum(1 for code, doc in named.items() if code not in old and written.get(code) == doc)

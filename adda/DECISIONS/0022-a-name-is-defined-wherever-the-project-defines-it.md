@@ -15,10 +15,10 @@ source", and took source to mean `sync.SOURCE_SUFFIXES`: Python and JavaScript/T
 That held on ADDA, whose names all live in Python.
 
 The first run on fleet products did not hold. A read-only dry run on copies of three of them
-(HireGEN, BloomAI, discipline-m) produced 60 `--refs` findings, and 51 of them (85%) were false:
+(a hiring app, a school-analytics app and a trading app) produced 60 `--refs` findings, and 51 of them (85%) were false:
 
-- **Names defined outside source code.** BloomAI's docs cite its row-level-security policies,
-  defined in SQL migrations (23). discipline-m's cite its Prisma models and the environment
+- **Names defined outside source code.** The school-analytics app's docs cite its row-level-security policies,
+  defined in SQL migrations (23). The trading app's cite its Prisma models and the environment
   variables its shell and PowerShell scripts read (20). A workflow defined one more.
 - **Paths into `.git/`.** Fleet `CLAUDE.md` files name their installed hooks,
   `.git/hooks/pre-push`. The path's first segment exists, so it was checked, and no checkout's
@@ -41,8 +41,8 @@ it. At 85% false, a rollout would have taught exactly that on day one.
 
 ## Consequences
 
-- On the three copies: 60 findings fell to 9, and all 9 are real (BloomAI's docs cite five names
-  no code defines, discipline-m's one). ADDA's own repository stays clean, and fastapi's two
+- On the three copies: 60 findings fell to 9, and all 9 are real (the school-analytics app's docs cite five
+  names no code defines, the trading app's one). ADDA's own repository stays clean, and fastapi's two
   README errors are still found.
 - Searching more files can only turn a flag into a pass, which ADR-0011 already named as this
   rule's safe direction. The cost is a name that exists only in config now passes; that is a

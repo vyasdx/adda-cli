@@ -476,7 +476,7 @@ def test_root_tooling_config_is_not_a_documentable_module(tmp_path):
 
 
 def test_regeneration_keeps_a_chosen_entry_for_a_non_source_file(tmp_path):
-    # The wave-1 dry run: BloomAI maps 14 SQL migrations, discipline-m its Prisma
+    # The wave-1 dry run: one product maps 14 SQL migrations, another its Prisma
     # schema. Those are the files whose docs go stale most, and they were dropped.
     (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
     (tmp_path / "supabase" / "migrations").mkdir(parents=True)
@@ -540,3 +540,130 @@ def test_audit_holds_a_kept_non_source_entry_to_its_doc(tmp_path):
     res = runner.invoke(app, ["audit", str(tmp_path), "--json"])
     missing = [f["item"] for f in json.loads(res.stdout)["findings"] if f["issue"] == "doc missing"]
     assert "docs/modules/database.md" in missing
+
+
+# --- ENH-ADDA-044: import a product's existing map (fleet format, folder entries) ---
+
+
+def _fleet(root, mappings):
+    (root / "docs").mkdir(exist_ok=True)
+    src = root / "docs" / "MODULE_MAP.json"
+    src.write_text(json.dumps({"version": "1.0", "mappings": mappings}), encoding="utf-8")
+    return src
+
+
+def _import(root, src, *extra):
+    out = root / "adda" / "MODULE_MAP.json"
+    res = runner.invoke(app, ["sync", str(root), "--map", "--from", str(src), "--out", str(out), *extra])
+    data = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else None
+    return res, data
+
+
+def _tree(root, files):
+    for rel in files:
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text("x\n", encoding="utf-8")
+
+
+def test_import_keeps_the_docs_a_product_already_chose(tmp_path):
+    _tree(tmp_path, ["src/lib/auth.ts", "src/lib/new.ts", "prisma/schema.prisma"])
+    src = _fleet(tmp_path, [{"path": "src/lib/auth.ts", "doc": "docs/modules/auth.md"},
+                            {"path": "prisma/schema.prisma", "doc": "docs/modules/database.md"}])
+    res, data = _import(tmp_path, src)
+    assert res.exit_code == 0, res.stdout
+    assert data["map"] == {
+        "prisma/schema.prisma": "docs/modules/database.md",  # imported, not source: kept
+        "src/lib/auth.ts": "docs/modules/auth.md",           # imported
+        "src/lib/new.ts": "docs/modules/lib/new.md",         # never mapped: generated
+    }
+    assert "Imported 2 entr" in res.stdout
+
+
+def test_a_folder_entry_stands_for_the_source_files_under_it(tmp_path):
+    # A fleet product maps API route folders: `src/app/api/auth/` -> auth.md.
+    _tree(tmp_path, ["src/app/api/auth/route.ts", "src/app/api/auth/callback/route.ts", "src/app/page.tsx"])
+    src = _fleet(tmp_path, [{"path": "src/app/api/auth/", "doc": "docs/modules/auth.md"}])
+    res, data = _import(tmp_path, src)
+    assert data["map"]["src/app/api/auth/route.ts"] == "docs/modules/auth.md"
+    assert data["map"]["src/app/api/auth/callback/route.ts"] == "docs/modules/auth.md"
+    assert data["map"]["src/app/page.tsx"] == "docs/modules/app/page.md"
+
+
+def test_a_file_entry_beats_the_folder_that_contains_it(tmp_path):
+    _tree(tmp_path, ["src/api/a.ts", "src/api/b.ts"])
+    for order in (1, -1):
+        maps = [{"path": "src/api/", "doc": "docs/modules/api.md"},
+                {"path": "src/api/b.ts", "doc": "docs/modules/b-special.md"}][::order]
+        res, data = _import(tmp_path, _fleet(tmp_path, maps))
+        (tmp_path / "adda" / "MODULE_MAP.json").unlink()
+        assert data["map"]["src/api/b.ts"] == "docs/modules/b-special.md"
+        assert data["map"]["src/api/a.ts"] == "docs/modules/api.md"
+
+
+def test_prose_is_not_imported_and_each_one_is_named(tmp_path):
+    # A fleet product mapped CLAUDE.md and its daily ops trackers to a module doc,
+    # which would read that doc stale forever. A doc is not code (ADR-0012).
+    _tree(tmp_path, ["app.py", "CLAUDE.md", ".ops/status.md"])
+    src = _fleet(tmp_path, [{"path": "CLAUDE.md", "doc": "docs/modules/ops.md"},
+                            {"path": ".ops/status.md", "doc": "docs/modules/ops.md"}])
+    res, data = _import(tmp_path, src)
+    assert data["map"] == {"app.py": "docs/modules/app.md"}
+    assert "CLAUDE.md" in res.stdout and ".ops/status.md" in res.stdout and "prose" in res.stdout
+
+
+def test_entries_that_cannot_be_imported_are_reported_not_dropped_silently(tmp_path):
+    _tree(tmp_path, ["app.py", "assets/logo.png"])
+    src = _fleet(tmp_path, [{"path": "src/gone.ts", "doc": "docs/modules/gone.md"},
+                            {"path": "assets/", "doc": "docs/modules/brand.md"},
+                            {"path": "app.py"}])
+    res, data = _import(tmp_path, src)
+    assert res.exit_code == 0
+    assert data["map"] == {"app.py": "docs/modules/app.md"}
+    for gone in ("src/gone.ts", "assets", "malformed"):
+        assert gone in res.stdout
+
+
+def test_an_entry_outside_the_repository_is_not_imported(tmp_path):
+    repo = tmp_path / "repo"
+    _tree(repo, ["app.py"])
+    _tree(tmp_path, ["outside.ts"])  # exists, but not in this repository
+    src = _fleet(repo, [{"path": "../outside.ts", "doc": "docs/modules/x.md"}])
+    res, data = _import(repo, src)
+    assert data["map"] == {"app.py": "docs/modules/app.md"}
+    assert "outside the repository" in res.stdout
+
+
+def test_an_existing_adda_map_wins_over_the_import(tmp_path):
+    _tree(tmp_path, ["src/auth.ts"])
+    out = tmp_path / "adda" / "MODULE_MAP.json"
+    out.parent.mkdir()
+    out.write_text(json.dumps({"map": {"src/auth.ts": "docs/modules/session.md"}, "exempt": []}), encoding="utf-8")
+    src = _fleet(tmp_path, [{"path": "src/auth.ts", "doc": "docs/modules/auth.md"}])
+    _, data = _import(tmp_path, src)
+    assert data["map"] == {"src/auth.ts": "docs/modules/session.md"}
+
+
+def test_import_reads_adda_format_too(tmp_path):
+    _tree(tmp_path, ["src/auth.ts"])
+    src = tmp_path / "old-map.json"
+    src.write_text(json.dumps({"map": {"src/auth.ts": "docs/modules/auth.md"}}), encoding="utf-8")
+    _, data = _import(tmp_path, src)
+    assert data["map"] == {"src/auth.ts": "docs/modules/auth.md"}
+
+
+def test_an_unreadable_import_fails_loudly(tmp_path):
+    _tree(tmp_path, ["app.py"])
+    bad = tmp_path / "bad.json"
+    for content in ("{not json", json.dumps({"version": 1}), json.dumps([1, 2])):
+        bad.write_text(content, encoding="utf-8")
+        res, data = _import(tmp_path, bad)
+        assert res.exit_code == 1 and data is None
+    res, _ = _import(tmp_path, tmp_path / "missing.json")
+    assert res.exit_code == 1
+
+
+def test_from_needs_map(tmp_path):
+    _tree(tmp_path, ["app.py"])
+    src = _fleet(tmp_path, [])
+    res = runner.invoke(app, ["sync", str(tmp_path), "--from", str(src)])
+    assert res.exit_code != 0

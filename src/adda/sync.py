@@ -114,6 +114,9 @@ MAP_EXEMPT_NAMES = {"__init__.py", "__main__.py", "conftest.py", "setup.py"}
 # `discover_deps` already read package.json; the map generator did not, so doc
 # enforcement stopped at Python while most agent-heavy codebases are TS/JS.
 SOURCE_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+# Prose documents; it never defines code (BUG-ADDA-030) and is never code a map
+# routes to a doc (ENH-ADDA-044, ADR-0012).
+PROSE_SUFFIXES = (".md", ".mdx", ".markdown", ".rst", ".txt", ".adoc")
 
 
 def _is_source(name: str) -> bool:
@@ -267,6 +270,55 @@ def declared_docs(repo: Path, files, doc_dir: str = "docs/modules") -> dict:
 
 def _slash(path: str) -> str:
     return path.replace("\\", "/").strip("/")
+
+
+def import_map(repo: Path, data, include=None) -> tuple[dict, list]:
+    """({file: doc}, notes) from a product's existing map (ENH-ADDA-044, ADR-0023).
+
+    Fleet products kept code-to-doc maps by hand before ADDA, as
+    `{"mappings": [{"path", "doc"}]}`; ADDA's own `{"map": {...}}` is read too.
+    Starting from the product's own choices beats ADDA's guess, so a rollout
+    imports them once instead of redoing them by hand.
+
+    A folder entry (`src/app/api/auth/`) stands for the source files under it,
+    and an entry naming one of those files beats the folder. Every entry left
+    out gets a note saying why - prose (a doc is not code, ADR-0012), a file
+    that is gone, a folder with no source in it, a path outside the repository,
+    a malformed entry - so nothing is dropped without a word. Raises ValueError
+    for input that is not a map at all.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("not a JSON object")
+    if isinstance(data.get("mappings"), list):
+        pairs = [(e.get("path"), e.get("doc")) if isinstance(e, dict) else (e, None)
+                 for e in data["mappings"]]
+    elif isinstance(data.get("map"), dict):
+        pairs = list(data["map"].items())
+    else:
+        raise ValueError('neither a "mappings" list nor a "map" object')
+    root, files = repo.resolve(), source_files(repo, include)
+    entries, folders, notes = {}, {}, []
+    for path, doc in pairs:
+        if not (isinstance(path, str) and path.strip() and isinstance(doc, str) and doc.strip()):
+            notes.append(f"malformed entry, not imported: {path!r} -> {doc!r}")
+            continue
+        rel, doc = _slash(path), _slash(doc)
+        target = (repo / rel).resolve()
+        if not target.is_relative_to(root):
+            notes.append(f"outside the repository, not imported: {path}")
+        elif target.is_dir():
+            under = [f for f in files if f.startswith(rel + "/")]
+            if not under:
+                notes.append(f"folder holds no source files, not imported: {rel}/")
+            for f in under:
+                folders.setdefault(f, doc)
+        elif not target.is_file():
+            notes.append(f"file is gone, not imported: {rel}")
+        elif rel.lower().endswith(PROSE_SUFFIXES):
+            notes.append(f"prose is a doc, not code - not imported: {rel}")
+        else:
+            entries[rel] = doc
+    return {**folders, **entries}, notes
 
 
 def module_map_json(repo: Path, doc_dir: str = "docs/modules", include=None, keep=None,

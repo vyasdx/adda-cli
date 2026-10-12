@@ -34,7 +34,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from adda.modulemap import load_map
-from adda.sync import IGNORE_DIRS, SOURCE_SUFFIXES
+from adda.sync import IGNORE_DIRS, PROSE_SUFFIXES, SOURCE_SUFFIXES
 
 # Broader than source discovery, on purpose. Discovery answers "what needs a
 # doc?", so it leaves out tests and scripts. This answers "does this name exist
@@ -44,8 +44,8 @@ from adda.sync import IGNORE_DIRS, SOURCE_SUFFIXES
 _CORPUS_SKIP = IGNORE_DIRS - {"tests", "test", "scripts", "examples"}
 # BUG-ADDA-030: a name is defined wherever the project defines it - a SQL
 # migration, a Prisma schema, a shell script, a workflow - not only in source
-# code. Prose is the one exception: a doc must not vouch for its own citation.
-_PROSE_SUFFIXES = (".md", ".mdx", ".markdown", ".rst", ".txt", ".adoc")
+# code. Prose (`sync.PROSE_SUFFIXES`) is the one exception: a doc must not vouch
+# for its own citation.
 _CORPUS_MAX_BYTES = 1_000_000  # a vendored bundle or dump is not a definition
 
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
@@ -157,7 +157,7 @@ def _code_names(repo: Path):
     for dirpath, dirnames, filenames in os.walk(repo):
         dirnames[:] = [d for d in dirnames if d not in _CORPUS_SKIP and not d.startswith(".")]
         for filename in filenames:
-            if filename.lower().endswith(_PROSE_SUFFIXES):
+            if filename.lower().endswith(PROSE_SUFFIXES):
                 continue
             path = Path(dirpath) / filename
             try:
