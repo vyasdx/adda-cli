@@ -613,6 +613,7 @@ def test_prose_is_not_imported_and_each_one_is_named(tmp_path):
 
 def test_entries_that_cannot_be_imported_are_reported_not_dropped_silently(tmp_path):
     _tree(tmp_path, ["app.py", "assets/logo.png"])
+    (tmp_path / "assets" / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00binary")
     src = _fleet(tmp_path, [{"path": "src/gone.ts", "doc": "docs/modules/gone.md"},
                             {"path": "assets/", "doc": "docs/modules/brand.md"},
                             {"path": "app.py"}])
@@ -724,3 +725,95 @@ def test_outside_git_every_source_file_is_still_mapped(tmp_path):
     (tmp_path / ".gitignore").write_text("src/generated/\n", encoding="utf-8")
     data = _regen(tmp_path, {"map": {}, "exempt": []})
     assert "src/generated/client.ts" in data["map"]
+
+
+# --- ENH-ADDA-046: every fleet hand-map shape imports ---
+
+
+def _map_file(root, data, name="docs/MODULE_MAP-PRODUCT.json"):
+    p = root / name
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data), encoding="utf-8")
+    return p
+
+
+def test_owns_globs_cover_the_text_files_under_them_not_binaries(tmp_path):
+    # VoiceForgeAI's shape: modules[{doc, owns: [globs]}].
+    _git_repo(tmp_path)
+    _tree(tmp_path, ["app/pilot/page.tsx", "app/pilot/style.css", "prisma/schema.prisma", "public/brand/logo.png"])
+    (tmp_path / "public" / "brand" / "logo.png").write_bytes(b"\x89PNG\x00\x00binary")
+    src = _map_file(tmp_path, {"modules": [
+        {"name": "shell", "doc": "docs/modules/shell.md", "owns": ["app/pilot/**", "public/brand/**"]},
+        {"name": "db", "doc": "docs/modules/db.md", "owns": ["prisma/**"]}]})
+    res, data = _import(tmp_path, src)
+    assert res.exit_code == 0, res.stdout
+    assert data["map"]["app/pilot/page.tsx"] == "docs/modules/shell.md"
+    assert data["map"]["app/pilot/style.css"] == "docs/modules/shell.md"
+    assert data["map"]["prisma/schema.prisma"] == "docs/modules/db.md"
+    assert "public/brand/logo.png" not in data["map"]
+
+
+def test_covers_lists_import_and_ignored_files_become_exemptions(tmp_path):
+    # LinuxDiag's shape: modules[{doc, covers}] + ignored.files_outside_adda.
+    _tree(tmp_path, ["analyzer.py", "parsers/cpu.py", "generate_doc.py"])
+    src = _map_file(tmp_path, {
+        "modules": [{"doc": "docs/modules/analyzer.md", "covers": ["analyzer.py", "parsers/cpu.py"]}],
+        "ignored": {"files_outside_adda": ["generate_doc.py"], "reason": "one-off tools"}})
+    res, data = _import(tmp_path, src)
+    assert data["map"] == {"analyzer.py": "docs/modules/analyzer.md", "parsers/cpu.py": "docs/modules/analyzer.md"}
+    assert "generate_doc.py" in data["exempt"]
+
+
+def test_file_entries_import_scripts_and_config_that_sync_never_maps(tmp_path):
+    # Growth-Engine's shape: modules[{file, doc}]; its code lives in scripts/,
+    # which sync skips by design - an imported choice is kept regardless.
+    _tree(tmp_path, ["n8n/flow.js", "scripts/radar-feed.py", "core/airtable-schema.json"])
+    src = _map_file(tmp_path, {"modules": [
+        {"name": "radar", "file": "scripts/radar-feed.py", "doc": "docs/modules/radar-feed.md"},
+        {"name": "hub", "file": "core/airtable-schema.json", "doc": "docs/modules/airtable-hub.md"}]})
+    _, data = _import(tmp_path, src)
+    assert data["map"]["scripts/radar-feed.py"] == "docs/modules/radar-feed.md"
+    assert data["map"]["core/airtable-schema.json"] == "docs/modules/airtable-hub.md"
+
+
+def test_a_section_for_another_repository_is_named_not_imported(tmp_path):
+    # SEO_GEO's shape: repos{name: {root, modules[{code, doc}]}}; one root is
+    # this repo, the other a different checkout entirely.
+    _tree(tmp_path, ["src/lib/registry.ts", "index.js"])
+    src = _map_file(tmp_path, {"repos": {
+        "web": {"root": ".", "modules": [{"code": "src/lib/registry.ts", "doc": "docs/modules/registry.md"}]},
+        "mirror": {"root": "D:/Other/scripts", "modules": [{"code": "index.js", "doc": "docs/modules/agent.md"}]}}})
+    res, data = _import(tmp_path, src)
+    assert data["map"]["src/lib/registry.ts"] == "docs/modules/registry.md"
+    assert data["map"].get("index.js") != "docs/modules/agent.md"
+    assert "another repository" in res.stdout and "D:/Other/scripts" in res.stdout
+
+
+def test_a_glob_that_matches_nothing_is_named(tmp_path):
+    _tree(tmp_path, ["app.py"])
+    src = _map_file(tmp_path, {"modules": [{"doc": "docs/modules/x.md", "owns": ["lib/old/**"]}]})
+    res, _ = _import(tmp_path, src)
+    assert "lib/old/**" in res.stdout
+
+
+def test_a_map_with_no_doc_and_code_entries_fails_loudly(tmp_path):
+    _tree(tmp_path, ["app.py"])
+    src = _map_file(tmp_path, {"product": "x", "modules": [{"name": "a", "purpose": "b"}]})
+    res, data = _import(tmp_path, src)
+    assert res.exit_code == 1 and data is None
+
+
+def test_a_wildcard_entry_skips_the_prose_under_it(tmp_path):
+    _tree(tmp_path, ["components/button.tsx", "components/README.md", "components/notes.txt"])
+    src = _map_file(tmp_path, {"modules": [{"doc": "docs/modules/ui.md", "owns": ["components/**"]}]})
+    _, data = _import(tmp_path, src)
+    assert data["map"] == {"components/button.tsx": "docs/modules/ui.md"}
+
+
+def test_a_literal_path_with_brackets_is_a_file_not_a_wildcard(tmp_path):
+    # Next.js dynamic routes: `[id]` is a directory name. Read as a wildcard it
+    # matched nothing, and the real-repo run lost 2 and 9 entries on two products.
+    _tree(tmp_path, ["web/app/profile/[id]/page.tsx"])
+    src = _fleet(tmp_path, [{"path": "web/app/profile/[id]/page.tsx", "doc": "docs/modules/profile.md"}])
+    _, data = _import(tmp_path, src)
+    assert data["map"] == {"web/app/profile/[id]/page.tsx": "docs/modules/profile.md"}

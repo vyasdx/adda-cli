@@ -296,19 +296,21 @@ def sync(
         if not isinstance(previous, dict):
             previous = {}  # valid JSON but not a map: same
 
-    imported, notes = {}, []
+    imported, notes, exempt_in = {}, [], []
     if from_ is not None:
         # ENH-ADDA-044: a product's own map seeds this one. Anything that cannot
         # be read stops here - an import that quietly did nothing would leave the
         # product's choices to be redone by hand without anyone noticing.
         try:
             source = json.loads(from_.read_text(encoding="utf-8"))
-            imported, notes = import_map(repo, source, previous.get("include") or None)
+            imported, notes, exempt_in = import_map(repo, source)
         except (OSError, ValueError) as exc:
             typer.secho(f"Cannot import {from_}: {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
         kept = previous.get("map") if isinstance(previous.get("map"), dict) else {}
-        previous = {**previous, "map": {**imported, **kept}}  # this map's own choices win
+        written = previous.get("exempt") if isinstance(previous.get("exempt"), list) else []
+        previous = {**previous, "map": {**imported, **kept},  # this map's own choices win
+                    "exempt": sorted(set(written) | set(exempt_in))}
 
     named = {}
     if map_:
@@ -325,6 +327,8 @@ def sync(
         typer.secho(f"Wrote {label} -> {out}", fg=typer.colors.GREEN)
         if from_ is not None:
             typer.echo(f"Imported {len(imported)} entr(ies) from {from_}.")
+            if exempt_in:
+                typer.echo(f"Imported {len(exempt_in)} exemption(s) the map lists as needing no doc.")
             for note in notes:
                 typer.secho(f"  {note}", fg=typer.colors.YELLOW)
         old = previous.get("map") if isinstance(previous.get("map"), dict) else {}

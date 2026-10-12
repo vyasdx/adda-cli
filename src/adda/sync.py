@@ -15,6 +15,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from fnmatch import fnmatchcase
+
 from adda.modulemap import is_exempt
 
 # Directories that are never project "modules" (build/tooling/test/doc noise).
@@ -300,32 +302,109 @@ def _slash(path: str) -> str:
     return path.replace("\\", "/").strip("/")
 
 
-def import_map(repo: Path, data, include=None) -> tuple[dict, list]:
-    """({file: doc}, notes) from a product's existing map (ENH-ADDA-044, ADR-0023).
+# The keys fleet hand maps use for "the code this doc covers" (ENH-ADDA-046).
+_CODE_KEYS = ("path", "file", "code", "owns", "covers")
 
-    Fleet products kept code-to-doc maps by hand before ADDA, as
-    `{"mappings": [{"path", "doc"}]}`; ADDA's own `{"map": {...}}` is read too.
-    Starting from the product's own choices beats ADDA's guess, so a rollout
-    imports them once instead of redoing them by hand.
 
-    A folder entry (`src/app/api/auth/`) stands for the source files under it,
-    and an entry naming one of those files beats the folder. Every entry left
-    out gets a note saying why - prose (a doc is not code, ADR-0012), a file
-    that is gone, a folder with no source in it, a path outside the repository,
-    a malformed entry - so nothing is dropped without a word. Raises ValueError
-    for input that is not a map at all.
+def _map_pairs(node, out: list, notes: list) -> None:
+    """Collect (code pattern, doc) from any object naming a `doc` and its code."""
+    if isinstance(node, list):
+        for item in node:
+            _map_pairs(item, out, notes)
+        return
+    if not isinstance(node, dict):
+        return
+    root = node.get("root")
+    if isinstance(root, str) and root.strip() not in ("", ".", "./"):
+        found: list = []
+        _map_pairs({k: v for k, v in node.items() if k != "root"}, found, [])
+        notes.append(f"{len(found)} entr(ies) for another repository (root {root}), not imported")
+        return
+    codes = [node[k] for k in _CODE_KEYS if k in node]
+    if codes:
+        doc = node.get("doc")
+        patterns = [p for c in codes for p in (c if isinstance(c, list) else [c])]
+        if not (isinstance(doc, str) and doc.strip()) or not patterns:
+            notes.append(f"malformed entry, not imported: {codes!r} -> {doc!r}")
+        else:
+            out.extend((p, doc) for p in patterns)
+    for key, value in node.items():
+        if key not in _CODE_KEYS and isinstance(value, (dict, list)):
+            _map_pairs(value, out, notes)
+
+
+def _exemptions(data: dict) -> list:
+    """Paths and patterns a product's map says need no doc (`ignored` / `exempt`)."""
+    found = []
+    for key in ("ignored", "exempt"):
+        value = data.get(key)
+        lists = value.values() if isinstance(value, dict) else [value]
+        found += [s for v in lists if isinstance(v, list) for s in v if isinstance(s, str)]
+    return [_slash(s) for s in found if s.strip()]
+
+
+def _text_files(repo: Path) -> list:
+    """What a folder or wildcard entry can cover: text files git sees, prose excepted.
+
+    Tracked plus untracked-but-not-ignored, so a nested repository or ignored
+    output never comes in (ADR-0024); outside git, a walk that skips the same
+    directories `sync` does. A binary (an image, a font) is not code to document.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            cwd=repo, capture_output=True, timeout=60,
+        )
+        rels = [r for r in out.stdout.decode("utf-8").split("\0") if r] if out.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        rels = None
+    if rels is None:
+        rels = [p.relative_to(repo).as_posix() for p in repo.rglob("*")
+                if p.is_file() and not any(_is_ignored(x) for x in p.relative_to(repo).parts[:-1])]
+    keep = []
+    for rel in sorted(set(rels)):
+        path = repo / rel
+        if rel.lower().endswith(PROSE_SUFFIXES) or not path.is_file():
+            continue
+        try:
+            with path.open("rb") as fh:
+                if b"\0" in fh.read(8192):
+                    continue
+        except OSError:
+            continue
+        keep.append(rel)
+    return keep
+
+
+def import_map(repo: Path, data) -> tuple[dict, list, list]:
+    """({file: doc}, notes, exempt) from a product's existing map (ADR-0023, ENH-ADDA-046).
+
+    Fleet products kept code-to-doc maps by hand before ADDA, each in its own
+    shape: `mappings[{path, doc}]`, `modules[{doc, owns|covers|file}]`,
+    `repos{name: {root, modules[{code, doc}]}}`. What they share is an object
+    naming a `doc` and the code it covers, so that is what is read, at any depth;
+    ADDA's own `{"map": {...}}` is read too. Starting from the product's choices
+    beats ADDA's guess, so a rollout imports them once.
+
+    An exact path is imported as named, whatever kind of file, if it exists and
+    is not prose (a doc is not code, ADR-0012). A folder or a wildcard stands for
+    the text files under it (`_text_files`); an exact entry beats them. A section
+    whose `root` is another checkout is not this repository's and is skipped. The
+    map's `ignored` / `exempt` lists come back as exemptions. Every entry left out
+    gets a note saying why; input with no entry at all raises ValueError.
     """
     if not isinstance(data, dict):
         raise ValueError("not a JSON object")
-    if isinstance(data.get("mappings"), list):
-        pairs = [(e.get("path"), e.get("doc")) if isinstance(e, dict) else (e, None)
-                 for e in data["mappings"]]
-    elif isinstance(data.get("map"), dict):
+    notes: list = []
+    if isinstance(data.get("map"), dict):
         pairs = list(data["map"].items())
     else:
-        raise ValueError('neither a "mappings" list nor a "map" object')
-    root, files = repo.resolve(), source_files(repo, include)
-    entries, folders, notes = {}, {}, []
+        pairs = []
+        _map_pairs(data, pairs, notes)
+        if not pairs and not notes:
+            raise ValueError("no entry naming a doc and the code it covers")
+    root, text = repo.resolve(), None
+    entries, broad = {}, {}
     for path, doc in pairs:
         if not (isinstance(path, str) and path.strip() and isinstance(doc, str) and doc.strip()):
             notes.append(f"malformed entry, not imported: {path!r} -> {doc!r}")
@@ -334,19 +413,24 @@ def import_map(repo: Path, data, include=None) -> tuple[dict, list]:
         target = (repo / rel).resolve()
         if not target.is_relative_to(root):
             notes.append(f"outside the repository, not imported: {path}")
-        elif target.is_dir():
-            under = [f for f in files if f.startswith(rel + "/")]
+            continue
+        # A path naming a real file is that file, brackets and all: Next.js
+        # routes live in folders called `[id]`, which a wildcard read would miss.
+        if not target.is_file() and (any(c in rel for c in "*?[") or target.is_dir()):
+            text = text if text is not None else _text_files(repo)
+            under = ([f for f in text if fnmatchcase(f, rel)] if any(c in rel for c in "*?[")
+                     else [f for f in text if f.startswith(rel + "/")])
             if not under:
-                notes.append(f"folder holds no source files, not imported: {rel}/")
+                notes.append(f"matches no file to map, not imported: {path}")
             for f in under:
-                folders.setdefault(f, doc)
+                broad.setdefault(f, doc)
         elif not target.is_file():
             notes.append(f"file is gone, not imported: {rel}")
         elif rel.lower().endswith(PROSE_SUFFIXES):
             notes.append(f"prose is a doc, not code - not imported: {rel}")
         else:
             entries[rel] = doc
-    return {**folders, **entries}, notes
+    return {**broad, **entries}, notes, _exemptions(data)
 
 
 def module_map_json(repo: Path, doc_dir: str = "docs/modules", include=None, keep=None,
