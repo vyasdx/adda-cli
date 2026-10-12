@@ -4,4 +4,4 @@
 # Project Version
 
 project: ADDA
-version: 0.5.2
+version: 0.5.3
