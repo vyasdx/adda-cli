@@ -670,3 +670,24 @@ def test_a_path_into_git_internals_is_unresolved_not_missing(tmp_path):
           {"CLAUDE.md": "Hooks: `.git/hooks/pre-push` and `.git/hooks/commit-msg`.\n"})
     findings, _, stats = instructions_report(tmp_path)
     assert findings == [] and stats["unresolved"] == 2 and stats["paths"] == 0
+
+
+# --- BUG-ADDA-032: an ignored file or a nested repo cannot vouch for a name ---
+
+
+def _git_init(root):
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+
+
+def test_a_name_defined_only_in_an_ignored_file_is_still_missing(tmp_path):
+    _project(tmp_path, "Calls `ghost_helper`.\n", extra={"gen/out.js": "function ghost_helper() {}\n",
+                                                          ".gitignore": "gen/\n"})
+    _git_init(tmp_path)
+    assert _missing(refs_report(tmp_path, tmp_path / "adda")[0]) == ["ghost_helper"]
+
+
+def test_a_name_defined_only_in_a_nested_repo_is_still_missing(tmp_path):
+    _project(tmp_path, "Calls `ghost_helper`.\n", extra={"Ranker/rank.py": "def ghost_helper():\n    pass\n"})
+    _git_init(tmp_path)
+    _git_init(tmp_path / "Ranker")
+    assert _missing(refs_report(tmp_path, tmp_path / "adda")[0]) == ["ghost_helper"]

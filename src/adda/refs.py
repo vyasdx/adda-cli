@@ -34,7 +34,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from adda.modulemap import load_map
-from adda.sync import IGNORE_DIRS, PROSE_SUFFIXES, SOURCE_SUFFIXES
+from adda.sync import IGNORE_DIRS, PROSE_SUFFIXES, SOURCE_SUFFIXES, git_ignored
 
 # Broader than source discovery, on purpose. Discovery answers "what needs a
 # doc?", so it leaves out tests and scripts. This answers "does this name exist
@@ -153,22 +153,28 @@ def _code_names(repo: Path):
     None is "cannot tell": with nothing to compare against, every cited name
     would read as missing, which is a false alarm, not a finding.
     """
-    names, files = set(), 0
+    names, files, candidates = set(), 0, []
     for dirpath, dirnames, filenames in os.walk(repo):
-        dirnames[:] = [d for d in dirnames if d not in _CORPUS_SKIP and not d.startswith(".")]
-        for filename in filenames:
-            if filename.lower().endswith(PROSE_SUFFIXES):
+        # BUG-ADDA-032: a nested repository is someone else's code.
+        dirnames[:] = [d for d in dirnames if d not in _CORPUS_SKIP and not d.startswith(".")
+                       and not (Path(dirpath) / d / ".git").exists()]
+        candidates += [Path(dirpath) / f for f in filenames
+                       if not f.lower().endswith(PROSE_SUFFIXES)]
+    # ...and an ignored file exists on one machine only, so it defines nothing.
+    rel = {p: p.relative_to(repo).as_posix() for p in candidates}
+    ignored = git_ignored(repo, list(rel.values()))
+    for path in candidates:
+        if rel[path] in ignored:
+            continue
+        try:
+            if path.stat().st_size > _CORPUS_MAX_BYTES:
                 continue
-            path = Path(dirpath) / filename
-            try:
-                if path.stat().st_size > _CORPUS_MAX_BYTES:
-                    continue
-                text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue  # binary or unreadable: defines nothing a doc can cite
-            if filename.endswith(SOURCE_SUFFIXES):
-                files += 1  # "is there code at all" still means source code
-            names.update(_IDENT.findall(text))
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue  # binary or unreadable: defines nothing a doc can cite
+        if path.name.endswith(SOURCE_SUFFIXES):
+            files += 1  # "is there code at all" still means source code
+        names.update(_IDENT.findall(text))
     return names if files else None
 
 
@@ -279,7 +285,7 @@ def _discover(repo: Path) -> list[tuple[str, str]]:
             owner = _convention(rel)
             if owner is not None:
                 found.append((rel, owner))
-    ignored = _ignored_many(repo, [rel for rel, _ in found])
+    ignored = git_ignored(repo, [rel for rel, _ in found])
     return sorted(f for f in found if f[0] not in ignored)
 
 
@@ -395,21 +401,6 @@ def _ignored(repo: Path, rel: str) -> bool:
     except (OSError, subprocess.SubprocessError):
         return False
     return out.returncode == 0
-
-
-def _ignored_many(repo: Path, rels: list[str]) -> set[str]:
-    """The subset of `rels` that git ignores, in one call. Outside a git repo,
-    or if git fails, nothing is treated as ignored."""
-    if not rels:
-        return set()
-    try:
-        out = subprocess.run(
-            ["git", "check-ignore", "--stdin", "-z"], cwd=repo, capture_output=True,
-            input="\0".join(rels).encode("utf-8"), timeout=30,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return set()
-    return {p for p in out.stdout.decode("utf-8").split("\0") if p}
 
 
 def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:

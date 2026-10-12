@@ -667,3 +667,60 @@ def test_from_needs_map(tmp_path):
     src = _fleet(tmp_path, [])
     res = runner.invoke(app, ["sync", str(tmp_path), "--from", str(src)])
     assert res.exit_code != 0
+
+
+# --- BUG-ADDA-032: the map and audit see what git sees, not what the disk holds ---
+
+
+def _git_repo(root):
+    import subprocess
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    return root
+
+
+def test_a_git_ignored_nested_repo_is_not_mapped(tmp_path):
+    # A fleet product's working tree held a git-ignored nested repo beside its
+    # app (no top-level src/); it produced five `doc missing` that no fresh
+    # clone could reproduce.
+    _git_repo(tmp_path)
+    _tree(tmp_path, ["web/app.ts", "Ranker/src/rank.ts"])
+    _git_repo(tmp_path / "Ranker")
+    (tmp_path / ".gitignore").write_text("Ranker/\n", encoding="utf-8")
+    data = _regen(tmp_path, {"map": {}, "exempt": []})
+    assert data["map"] == {"web/app.ts": "docs/modules/web/app.md"}
+
+
+def test_a_nested_repo_is_not_mapped_even_when_not_ignored(tmp_path):
+    _git_repo(tmp_path)
+    _tree(tmp_path, ["src/app.ts", "src/ranker/lib/x.ts"])
+    _git_repo(tmp_path / "src" / "ranker")
+    data = _regen(tmp_path, {"map": {}, "exempt": []})
+    assert data["map"] == {"src/app.ts": "docs/modules/app.md"}
+
+
+def test_a_git_ignored_file_is_not_mapped(tmp_path):
+    _git_repo(tmp_path)
+    _tree(tmp_path, ["src/app.ts", "src/generated/client.ts"])
+    (tmp_path / ".gitignore").write_text("src/generated/\n", encoding="utf-8")
+    data = _regen(tmp_path, {"map": {}, "exempt": []})
+    assert data["map"] == {"src/app.ts": "docs/modules/app.md"}
+
+
+def test_audit_does_not_call_an_ignored_file_unmapped(tmp_path):
+    _git_repo(tmp_path)
+    _tree(tmp_path, ["src/app.ts", "src/generated/client.ts"])
+    (tmp_path / ".gitignore").write_text("src/generated/\n", encoding="utf-8")
+    out = tmp_path / "adda" / "MODULE_MAP.json"
+    out.parent.mkdir()
+    out.write_text(json.dumps({"map": {"src/app.ts": "docs/modules/app.md"}, "exempt": []}), encoding="utf-8")
+    res = runner.invoke(app, ["audit", str(tmp_path), "--json"])
+    items = [f["item"] for f in json.loads(res.stdout)["findings"]]
+    assert not any("generated" in i for i in items), items
+
+
+def test_outside_git_every_source_file_is_still_mapped(tmp_path):
+    # No git, no ignore rules to consult: nothing is dropped.
+    _tree(tmp_path, ["src/app.ts", "src/generated/client.ts"])
+    (tmp_path / ".gitignore").write_text("src/generated/\n", encoding="utf-8")
+    data = _regen(tmp_path, {"map": {}, "exempt": []})
+    assert "src/generated/client.ts" in data["map"]

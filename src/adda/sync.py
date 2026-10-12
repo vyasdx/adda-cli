@@ -12,6 +12,7 @@ output is a markdown skeleton the user reconciles into ARCHITECTURE.md.
 
 import json
 import re
+import subprocess
 from pathlib import Path
 
 from adda.modulemap import is_exempt
@@ -153,6 +154,27 @@ def _map_ignored(name: str) -> bool:
     return name in MAP_IGNORE_DIRS or name.startswith(".") or name.endswith(".egg-info")
 
 
+def git_ignored(repo: Path, rels: list) -> set:
+    """The subset of `rels` that git ignores, in one call. Outside a git repo, or
+    if git fails, nothing is treated as ignored."""
+    if not rels:
+        return set()
+    try:
+        out = subprocess.run(
+            ["git", "check-ignore", "--stdin", "-z"], cwd=repo, capture_output=True,
+            input="\0".join(rels).encode("utf-8"), timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {p for p in out.stdout.decode("utf-8").split("\0") if p}
+
+
+def in_nested_repo(repo: Path, rel: str) -> bool:
+    """Is `rel` inside a separate git repository below `repo` (its own `.git`)?"""
+    parts = rel.split("/")[:-1]
+    return any((repo.joinpath(*parts[:i]) / ".git").exists() for i in range(1, len(parts) + 1))
+
+
 def _root_files(repo: Path, root: Path) -> list:
     """Documentable source under `root`, skipping map-ignored directories."""
     return [
@@ -227,7 +249,13 @@ def source_roots(repo: Path, include=None) -> tuple[list, list]:
             else:
                 excluded.append((path, f"{len(files)} Python file(s), no __init__.py"))
         roots = kept
-    return [f.relative_to(repo).as_posix() for r in roots for f in r[1]], excluded
+    # BUG-ADDA-032: the code is what git sees, not what the disk holds. A working
+    # tree carries git-ignored output and whole nested repositories a fresh
+    # clone never has; mapping them made findings no clean checkout reproduces.
+    rels = [f.relative_to(repo).as_posix() for r in roots for f in r[1]]
+    rels = [r for r in rels if not in_nested_repo(repo, r)]
+    ignored = git_ignored(repo, rels)
+    return [r for r in rels if r not in ignored], excluded
 
 
 def source_files(repo: Path, include=None) -> list:
