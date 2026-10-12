@@ -375,6 +375,7 @@ def audit(
     ref_stats = inst_stats = None
     try:
         findings, skipped = audit_report(adda_dir.parent, adda_dir)
+        audit_count = len(findings)
         if refs:
             # ENH-ADDA-027 / ADR-0011. Opt-in, so plain `audit` - and every CI
             # already running it - keeps exactly its five rules and exit code.
@@ -398,6 +399,7 @@ def audit(
         if ref_stats is not None:
             report["refs"] = ref_stats
             report["instructions"] = inst_stats
+            report["counts"] = {"audit": audit_count, "refs": len(findings) - audit_count}
         typer.echo(json.dumps(report, indent=2))
         raise typer.Exit(1 if findings else 0)
 
@@ -417,7 +419,11 @@ def audit(
     if not findings:
         typer.secho("No doc drift: every mapped code path has a current doc.", fg=typer.colors.GREEN)
         return
-    typer.secho(f"Doc drift detected: {len(findings)} finding(s)", fg=typer.colors.RED)
+    # ENH-ADDA-045: with --refs the total holds both kinds; say which is which,
+    # or the total gets read as a --refs baseline (it was, twice, in wave 1).
+    split = (f": {audit_count} from audit, {len(findings) - audit_count} from --refs"
+             if ref_stats is not None else "")
+    typer.secho(f"Doc drift detected: {len(findings)} finding(s){split}", fg=typer.colors.RED)
     colors = {"high": typer.colors.RED, "medium": typer.colors.YELLOW, "low": typer.colors.CYAN}
     for f in findings:
         name = f" `{f['ref']}`" if "ref" in f else ""

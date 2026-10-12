@@ -691,3 +691,36 @@ def test_a_name_defined_only_in_a_nested_repo_is_still_missing(tmp_path):
     _git_init(tmp_path)
     _git_init(tmp_path / "Ranker")
     assert _missing(refs_report(tmp_path, tmp_path / "adda")[0]) == ["ghost_helper"]
+
+
+# --- ENH-ADDA-045: --refs says how many of the findings are its own ---
+
+
+def _audit_and_refs_findings(root):
+    # One audit finding (`src/pkg/__init__.py` is unmapped) and one --refs
+    # finding (a gone name).
+    _project(root, "uses `gone_function`\n")
+
+
+def test_refs_headline_splits_the_total_between_audit_and_refs(tmp_path):
+    # Two readers took a fleet product's `audit --refs` total of 22 for a
+    # 22-finding --refs baseline; it was 21 from audit and 1 from --refs.
+    _audit_and_refs_findings(tmp_path)
+    res = runner.invoke(app, ["audit", str(tmp_path), "--refs"])
+    assert res.exit_code == 1
+    assert "2 finding(s): 1 from audit, 1 from --refs" in res.stdout
+
+
+def test_refs_json_carries_the_same_split(tmp_path):
+    _audit_and_refs_findings(tmp_path)
+    report = json.loads(runner.invoke(app, ["audit", str(tmp_path), "--refs", "--json"]).stdout)
+    assert report["counts"] == {"audit": 1, "refs": 1}
+    assert len(report["findings"]) == 2
+
+
+def test_plain_audit_output_is_unchanged(tmp_path):
+    _audit_and_refs_findings(tmp_path)
+    res = runner.invoke(app, ["audit", str(tmp_path)])
+    assert "Doc drift detected: 1 finding(s)\n" in res.stdout and "from --refs" not in res.stdout
+    report = json.loads(runner.invoke(app, ["audit", str(tmp_path), "--json"]).stdout)
+    assert "counts" not in report
