@@ -295,7 +295,8 @@ def module_map_json(repo: Path, doc_dir: str = "docs/modules", include=None, kee
     none of 119 generated paths matched its 60 existing docs, so overwriting
     those choices on every regenerate made the map unusable. An entry is kept
     while its code exists; only code the map has never seen gets a generated
-    path. A hand-written exempt pattern is kept and wins over an older map entry;
+    path - a kept entry may map any file, a migration or a schema included
+    (BUG-ADDA-031). A hand-written exempt pattern is kept and wins over an older map entry;
     an exact exempt path whose file is gone is dropped. Delete the file to
     regenerate from scratch.
 
@@ -325,6 +326,18 @@ def module_map_json(repo: Path, doc_dir: str = "docs/modules", include=None, kee
         # mirror the path, not just the stem - see the docstring
         stem_path = rel[4:] if rel.startswith("src/") else rel
         mapping[rel] = f"{doc_dir}/{stem_path.rsplit('.', 1)[0]}.md"
+    # BUG-ADDA-031: a product's own entry survives while its file exists, whatever
+    # kind of file it is. Only *new* entries are limited to source code: a SQL
+    # migration or a schema has no generated doc path, but a product that mapped
+    # one chose its doc, and audit and the hook check any entry they are given.
+    root = repo.resolve()
+    for rel, doc in previous.items():
+        if rel in mapping or rel in files or is_exempt(rel, written):
+            continue
+        target = (repo / rel).resolve()
+        if target.is_file() and target.is_relative_to(root):
+            mapping[rel] = doc
+    mapping = dict(sorted(mapping.items()))
     exempt += [e for e in written if any(c in e for c in "*?[") or e in files]
     out = {"map": mapping, "exempt": sorted(set(exempt))}
     out.update({k: v for k, v in (keep or {}).items() if k not in out and k != "include"})

@@ -470,3 +470,73 @@ def test_root_tooling_config_is_not_a_documentable_module(tmp_path):
     assert list(data["map"]) == ["main.py"]
     # packaging/test plumbing is EXCUSED in writing, not quietly dropped
     assert data["exempt"] == ["conftest.py", "setup.py"]
+
+
+# --- BUG-ADDA-031: a product's own entry survives whatever kind of file it maps ---
+
+
+def test_regeneration_keeps_a_chosen_entry_for_a_non_source_file(tmp_path):
+    # The wave-1 dry run: BloomAI maps 14 SQL migrations, discipline-m its Prisma
+    # schema. Those are the files whose docs go stale most, and they were dropped.
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "supabase" / "migrations").mkdir(parents=True)
+    (tmp_path / "supabase" / "migrations" / "003.sql").write_text("CREATE TABLE t ();\n", encoding="utf-8")
+    (tmp_path / "prisma").mkdir()
+    (tmp_path / "prisma" / "schema.prisma").write_text("model T {}\n", encoding="utf-8")
+    data = _regen(tmp_path, {"map": {
+        "supabase/migrations/003.sql": "docs/modules/database.md",
+        "prisma/schema.prisma": "docs/modules/database.md",
+    }, "exempt": []})
+    assert data["map"] == {
+        "app.py": "docs/modules/app.md",
+        "prisma/schema.prisma": "docs/modules/database.md",
+        "supabase/migrations/003.sql": "docs/modules/database.md",
+    }
+
+
+def test_a_chosen_entry_inside_an_ignored_directory_is_kept(tmp_path):
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "backup.sh").write_text("echo hi\n", encoding="utf-8")
+    data = _regen(tmp_path, {"map": {"scripts/backup.sh": "docs/modules/backups.md"}, "exempt": []})
+    assert data["map"]["scripts/backup.sh"] == "docs/modules/backups.md"
+
+
+def test_a_non_source_file_nobody_mapped_is_not_added(tmp_path):
+    # Only the product's own choices are kept; new entries still mean source code.
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "schema.sql").write_text("CREATE TABLE t ();\n", encoding="utf-8")
+    data = _regen(tmp_path, {"map": {}, "exempt": []})
+    assert data["map"] == {"app.py": "docs/modules/app.md"}
+
+
+def test_a_chosen_non_source_entry_whose_file_is_gone_is_dropped(tmp_path):
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    data = _regen(tmp_path, {"map": {"supabase/old.sql": "docs/modules/database.md"}, "exempt": []})
+    assert data["map"] == {"app.py": "docs/modules/app.md"}
+
+
+def test_an_exempt_pattern_wins_over_a_chosen_non_source_entry(tmp_path):
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "seed.sql").write_text("INSERT 1;\n", encoding="utf-8")
+    data = _regen(tmp_path, {"map": {"seed.sql": "docs/modules/database.md"}, "exempt": ["*.sql"]})
+    assert "seed.sql" not in data["map"]
+
+
+def test_a_chosen_entry_cannot_point_outside_the_repository(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "app.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "outside.sql").write_text("x\n", encoding="utf-8")
+    data = _regen(repo, {"map": {"../outside.sql": "docs/modules/x.md"}, "exempt": []})
+    assert data["map"] == {"app.py": "docs/modules/app.md"}
+
+
+def test_audit_holds_a_kept_non_source_entry_to_its_doc(tmp_path):
+    # Keeping the entry is only worth it if audit then checks it.
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "schema.sql").write_text("CREATE TABLE t ();\n", encoding="utf-8")
+    _regen(tmp_path, {"map": {"schema.sql": "docs/modules/database.md"}, "exempt": []})
+    res = runner.invoke(app, ["audit", str(tmp_path), "--json"])
+    missing = [f["item"] for f in json.loads(res.stdout)["findings"] if f["issue"] == "doc missing"]
+    assert "docs/modules/database.md" in missing
