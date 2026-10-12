@@ -724,3 +724,19 @@ def test_plain_audit_output_is_unchanged(tmp_path):
     assert "Doc drift detected: 1 finding(s)\n" in res.stdout and "from --refs" not in res.stdout
     report = json.loads(runner.invoke(app, ["audit", str(tmp_path), "--json"]).stdout)
     assert "counts" not in report
+
+
+# --- BUG-ADDA-033: a GitHub workflow defines names too ---
+
+
+def test_a_name_defined_only_in_a_github_workflow_counts(tmp_path):
+    # ADR-0022 names workflows as definitions, but every dot-folder was skipped,
+    # so a doc citing a workflow trigger read as `ref missing` on a fleet product.
+    _project(tmp_path, "Run it by hand through `workflow_dispatch`.\n",
+             extra={".github/workflows/ci.yml": "on:\n  workflow_dispatch:\n"})
+    assert refs_report(tmp_path, tmp_path / "adda")[0] == []
+
+
+def test_other_dot_folders_still_do_not_vouch(tmp_path):
+    _project(tmp_path, "Calls `ghost_helper`.\n", extra={".cache/build.js": "function ghost_helper() {}\n"})
+    assert _missing(refs_report(tmp_path, tmp_path / "adda")[0]) == ["ghost_helper"]

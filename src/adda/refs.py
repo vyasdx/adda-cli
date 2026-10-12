@@ -41,7 +41,10 @@ from adda.sync import IGNORE_DIRS, PROSE_SUFFIXES, SOURCE_SUFFIXES, git_ignored
 # anywhere in the code?", and a doc may legitimately cite a name that lives in a
 # test helper or a script. Searching more code can only turn a flag into a pass,
 # which is the safe direction for a rule whose failure mode is false alarms.
-_CORPUS_SKIP = IGNORE_DIRS - {"tests", "test", "scripts", "examples"}
+_CORPUS_SKIP = IGNORE_DIRS - {"tests", "test", "scripts", "examples", ".github"}
+# BUG-ADDA-033: the one dot-folder a project writes by hand - its CI workflows
+# define names a doc may cite (ADR-0022). Every other dot-folder is a tool's.
+_CORPUS_DOT_DIRS = {".github"}
 # BUG-ADDA-030: a name is defined wherever the project defines it - a SQL
 # migration, a Prisma schema, a shell script, a workflow - not only in source
 # code. Prose (`sync.PROSE_SUFFIXES`) is the one exception: a doc must not vouch
@@ -156,7 +159,8 @@ def _code_names(repo: Path):
     names, files, candidates = set(), 0, []
     for dirpath, dirnames, filenames in os.walk(repo):
         # BUG-ADDA-032: a nested repository is someone else's code.
-        dirnames[:] = [d for d in dirnames if d not in _CORPUS_SKIP and not d.startswith(".")
+        dirnames[:] = [d for d in dirnames if d not in _CORPUS_SKIP
+                       and (not d.startswith(".") or d in _CORPUS_DOT_DIRS)
                        and not (Path(dirpath) / d / ".git").exists()]
         candidates += [Path(dirpath) / f for f in filenames
                        if not f.lower().endswith(PROSE_SUFFIXES)]
