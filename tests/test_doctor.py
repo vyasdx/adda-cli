@@ -143,3 +143,23 @@ def test_outside_a_git_repo_fails_clearly(tmp_path):
     res = runner.invoke(app, ["doctor", str(tmp_path)])
     assert res.exit_code == 1
     assert "git" in res.stdout.lower()
+
+
+def test_doctor_fails_when_git_reads_hooks_from_outside_the_repository(tmp_path):
+    # BUG-ADDA-034: a gate there belongs to another checkout, or gates every
+    # repository sharing the folder; either way it is not this repo's gate.
+    repo, elsewhere = tmp_path / "copy", tmp_path / "original" / ".githooks"
+    repo.mkdir()
+    _repo(repo)
+    elsewhere.mkdir(parents=True)
+    subprocess.run(["git", "config", "core.hooksPath", str(elsewhere)], cwd=repo, check=True)
+    assert runner.invoke(app, ["hook", "install", str(repo), "--force"]).exit_code == 0
+    checks = diagnose(repo)
+    assert _state(checks, "hooks folder") == "fail"
+    assert str(elsewhere) in next(c["detail"] for c in checks if c["check"] == "hooks folder")
+
+
+def test_doctor_hooks_folder_check_passes_inside_the_repository(tmp_path):
+    _repo(tmp_path)
+    _install(tmp_path)
+    assert _state(diagnose(tmp_path), "hooks folder") == "ok"

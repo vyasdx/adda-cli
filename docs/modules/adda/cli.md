@@ -3,7 +3,7 @@
 
 # `cli` - `src/adda/cli.py`
 
-Last verified: 2026-10-12
+Last verified: 2026-10-16
 
 **Purpose** - ADDA's only entrypoint - the Typer app that wires the fifteen commands to the library modules.
 
@@ -39,6 +39,7 @@ Last verified: 2026-10-12
 
 ## Change Log (newest first)
 
+- [2026-10-16] BUG-ADDA-034 — `hook install` stops with exit 1 when the hooks folder is outside the repository, naming it; `--force` covers a deliberately shared folder.
 - [2026-10-12] ENH-ADDA-046 — `sync --from` merges the imported map's exemptions into `exempt` and prints how many; `import_map` no longer takes `include` · any fleet map shape imports (ADR-0025).
 - [2026-10-12] ENH-ADDA-045 — `audit --refs` headline splits its total (`N finding(s): A from audit, R from --refs`) and `--json` adds `counts: {audit, refs}`; plain `audit` output and JSON are unchanged · two readers in wave 1 took a 21 + 1 total for a 22-finding `--refs` baseline.
 - [2026-10-12] ENH-ADDA-044 — `sync --from <file>` (with `--map`) imports a product's existing map before regenerating, prints `Imported N entr(ies)` and one line per entry left out, and exits 1 on input it cannot read; `--from` without `--map` exits 2 · fleet products already keep hand maps (ADR-0023).

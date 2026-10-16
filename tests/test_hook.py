@@ -191,3 +191,56 @@ def test_gate_installed_under_core_hooks_path_really_blocks_a_commit(tmp_path):
     )
     assert out.returncode != 0
     assert "Commit blocked" in out.stdout + out.stderr
+
+
+# --- BUG-ADDA-034: never install a gate into another checkout ---
+
+
+def test_install_refuses_a_hooks_folder_outside_the_repository(tmp_path):
+    # A copy of a repo whose core.hooksPath is absolute still points at the
+    # original: installing "in the copy" wrote the gate into the real repo.
+    repo, elsewhere = tmp_path / "copy", tmp_path / "original" / ".githooks"
+    repo.mkdir()
+    _git_dir(repo)
+    elsewhere.mkdir(parents=True)
+    _git(repo, "config", "core.hooksPath", str(elsewhere))
+    res = runner.invoke(app, ["hook", "install", str(repo)])
+    assert res.exit_code == 1
+    assert "outside this repository" in res.stdout and str(elsewhere) in res.stdout
+    assert not (elsewhere / "pre-commit").exists()
+
+
+def test_force_installs_into_a_deliberately_shared_hooks_folder(tmp_path):
+    repo, shared = tmp_path / "repo", tmp_path / "shared-hooks"
+    repo.mkdir()
+    _git_dir(repo)
+    shared.mkdir()
+    _git(repo, "config", "core.hooksPath", str(shared))
+    res = runner.invoke(app, ["hook", "install", str(repo), "--force"])
+    assert res.exit_code == 0
+    assert "-m adda.cli hook run" in (shared / "pre-commit").read_text(encoding="utf-8")
+
+
+def test_an_absolute_hooks_path_inside_the_repository_still_installs(tmp_path):
+    # Two fleet repos set core.hooksPath to an absolute path of their own .githooks.
+    _git_dir(tmp_path)
+    _git(tmp_path, "config", "core.hooksPath", str(tmp_path / ".githooks"))
+    res = runner.invoke(app, ["hook", "install", str(tmp_path)])
+    assert res.exit_code == 0
+    assert (tmp_path / ".githooks" / "pre-commit").is_file()
+
+
+def test_a_linked_worktree_installs_into_its_main_repository_hooks(tmp_path):
+    # A worktree's hooks live in the main repo's git dir, outside the worktree
+    # itself - that is still this repository, not another checkout.
+    main = tmp_path / "main"
+    main.mkdir()
+    _git_dir(main)
+    _git(main, "config", "user.name", "t")
+    _git(main, "config", "user.email", "t@t")
+    (main / "a.txt").write_text("a\n", encoding="utf-8")
+    _git(main, "add", "a.txt")
+    _git(main, "commit", "-qm", "init")
+    _git(main, "worktree", "add", "-q", str(tmp_path / "wt"))
+    res = runner.invoke(app, ["hook", "install", str(tmp_path / "wt")])
+    assert res.exit_code == 0, res.stdout

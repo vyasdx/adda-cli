@@ -3,7 +3,7 @@
 
 # `hook` - `src/adda/hook.py`
 
-Last verified: 2026-09-24
+Last verified: 2026-10-16
 
 **Purpose** - The commit gate (the vision's layer 4) - enforcement that is mechanical, not memory. Blocks a commit that stages a code file without staging the doc `MODULE_MAP.json` routes it to. Staged-vs-staged needs no dates and no LLM, so there is nothing to forge and nothing to forget. `adda hook install` writes a pre-commit stub, with the install-time Python interpreter baked in, that invokes `python -m adda.cli hook run` on every commit.
 
@@ -32,6 +32,7 @@ CLI: `adda hook run [path]` (invoked by the installed hook) · `adda hook instal
 
 ## Change Log (newest first)
 
+- [2026-10-16] BUG-ADDA-034 — `hooks_outside_repo` added; `hook install` refuses a hooks folder outside the repository (worktree or git dirs) unless `--force` · an absolute `core.hooksPath` travels with `.git/config`, so installing in a scratch copy of two fleet repos wrote the gate into the real ones.
 - [2026-09-24] BUG-ADDA-027 - `hooks_dir` (moved here from `doctor`) resolves the hooks directory via `git rev-parse --git-path hooks`, and `hook install` writes there · with `core.hooksPath` set, install wrote to `.git/hooks`, which git never reads: reported installed, enforced nothing. Reproduced with a real commit before the fix and blocked by the same commit after it; a mutation dropping the `mkdir` turns two tests red.
 - [2026-08-18] ENH-ADDA-007 — documented that the hook is per-machine: untracked, interpreter baked in at install time, fails open if that interpreter goes away · enforcement can lapse silently, so `adda audit` is the backstop.
 - [2026-08-18] ENH-ADDA-007 — hook stub now execs the install-time interpreter via `-m adda.cli` · `exec adda hook run` needed `adda` on PATH and resolved to ADDA's own `adda/` directory, so the installed hook did not run at all.

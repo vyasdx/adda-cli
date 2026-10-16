@@ -18,7 +18,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from adda.hook import hooks_dir
+from adda.hook import hooks_dir, hooks_outside_repo
 from adda.modulemap import MAP_FILENAME
 
 _GATE = "adda.cli hook run"
@@ -104,6 +104,13 @@ def diagnose(repo: Path) -> list:
     if hooks is None:
         return [_check("git repository", "fail", f"{repo} is not inside a git repository")]
     checks = [_check("git repository", "ok", str(repo))]
+    # BUG-ADDA-034: a hooks folder outside the repository is another checkout's
+    # (an absolute core.hooksPath copied with .git/config) or shared by several.
+    if hooks_outside_repo(repo, hooks):
+        checks.append(_check("hooks folder", "fail",
+                             f"git reads hooks from {hooks}, outside this repository; a gate there is not this repo's"))
+    else:
+        checks.append(_check("hooks folder", "ok", "inside this repository"))
     checks += _hook_checks(repo, hooks)
     checks.append(_map_check(repo))
     skip = os.environ.get("ADDA_SKIP")

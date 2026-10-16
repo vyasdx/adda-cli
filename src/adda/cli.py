@@ -17,7 +17,7 @@ from adda.audit import audit_report
 from adda.compress import compress_text
 from adda.diff import diff_report
 from adda.evaluate import evaluate
-from adda.hook import check_staged, hook_body, hooks_dir, staged_paths
+from adda.hook import check_staged, hook_body, hooks_dir, hooks_outside_repo, staged_paths
 from adda.okf import compile_okf
 from adda.modulemap import load_instructions
 from adda.refs import instructions_report, refs_report
@@ -608,6 +608,16 @@ def hook_install(
         typer.secho(f"{path} is not a git repo.", fg=typer.colors.RED)
         raise typer.Exit(1)
     custom = hooks.resolve() != (path / ".git" / "hooks").resolve()
+    if hooks_outside_repo(path, hooks) and not force:
+        # BUG-ADDA-034: an absolute core.hooksPath copied with .git/config made a
+        # gate installed in a scratch copy land in the real repository.
+        typer.secho(
+            f"git reads hooks from {hooks}, which is outside this repository ({path.resolve()}).",
+            fg=typer.colors.RED,
+        )
+        typer.echo("Installing there would gate another checkout (an absolute core.hooksPath travels "
+                   "with .git/config into copies). If the folder is shared on purpose, re-run with --force.")
+        raise typer.Exit(1)
     hooks.mkdir(parents=True, exist_ok=True)
     target = hooks / "pre-commit"
     if target.exists() and not force:

@@ -51,6 +51,29 @@ def hooks_dir(repo: Path):
     return path if path.is_absolute() else repo / path
 
 
+def hooks_outside_repo(repo: Path, hooks: Path) -> bool:
+    """Does git read hooks from a folder outside this repository (BUG-ADDA-034)?
+
+    Inside means the worktree or a git directory of this repository (a linked
+    worktree keeps its hooks in the main repo's). An absolute `core.hooksPath`
+    travels with `.git/config`, so a copy of a repo can still point at the
+    original: a gate installed "here" would gate another checkout. A folder
+    shared by several repositories is also outside, deliberately.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel", "--absolute-git-dir", "--git-common-dir"],
+            cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if out.returncode != 0:
+        return False
+    roots = [Path(p) if Path(p).is_absolute() else repo / p for p in out.stdout.split("\n") if p.strip()]
+    target = hooks.resolve()
+    return not any(target.is_relative_to(r.resolve()) for r in roots + [repo])
+
+
 def hook_body(python: str) -> str:
     """Render the stub for a specific interpreter.
 
