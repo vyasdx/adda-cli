@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "adda"
-version = "0.5.4"
+version = "0.5.5"
 description = "ADDA — anti-drift architecture memory + OKF + Context Sentinel for AI-assisted development."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -76,6 +76,10 @@ include = [
     "/scripts/smoke_test.py", "/scripts/check_counts.py",
     "/README.md", "/LICENSE", "/OKF_SCHEMA.md", "/pyproject.toml",
 ]
+# BUG-ADDA-035. "/adda" let ADR-0008 in, and it quotes the credential above; the
+# export already leaves it out (scripts/export_public.py EXCLUDE_FILES), so a
+# build here now ships what the mirror ships.
+exclude = ["/adda/DECISIONS/0008-oss-mit-clean-repo.md"]
 
 [tool.ruff]
 target-version = "py310"          # must match requires-python

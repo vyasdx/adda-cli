@@ -136,7 +136,9 @@ jobs:
           allowed = {"README.md", "OKF_SCHEMA.md", ".gitignore", ".gitattributes"}
           bad = [r for r in rels
                  if (r.split("/")[0].startswith(".") and r not in allowed)
-                 or (r.endswith(".md") and "/" not in r and r not in allowed)]
+                 or (r.endswith(".md") and "/" not in r and r not in allowed)
+                 # BUG-ADDA-035: the one ADR the export leaves out quotes the credential.
+                 or r == "adda/DECISIONS/0008-oss-mit-clean-repo.md"]
           if bad:
               for b in sorted(bad):
                   print('  ' + b)
