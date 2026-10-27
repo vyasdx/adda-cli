@@ -238,8 +238,9 @@ def refs_report(repo: Path, adda_dir: Path) -> tuple[list[dict], list, dict]:
 # 2026-09-24 (ADR-0014 lists the sources). Patterns are fnmatch, where `*` also
 # crosses `/`, so `.cursor/rules/*.mdc` covers nested rule folders too.
 # Read in any directory: the tools document picking these up below the root.
+# REVIEW.md is Claude Code Review's, root plus subdirectories (ENH-ADDA-048, ADR-0026).
 _ANY_DIR = (
-    "AGENTS.md", "AGENTS.override.md", "CLAUDE.md", "GEMINI.md",
+    "AGENTS.md", "AGENTS.override.md", "CLAUDE.md", "GEMINI.md", "REVIEW.md",
     ".cursor/rules/*.mdc", ".cursor/rules/*.md", ".windsurf/rules/*.md", ".devin/rules/*.md",
 )
 # Read at the repository root only.

@@ -3,7 +3,7 @@
 
 # `refs` - `src/adda/refs.py`
 
-Last verified: 2026-10-12
+Last verified: 2026-10-27
 
 **Purpose** - The deterministic slice of the gap ancestry cannot see (ADR-0010, ADR-0011). `audit` decides staleness by commit ancestry, so a doc committed alongside its code reads as current even when it names a function deleted in that same commit. `refs` checks that every code name a mapped doc cites still appears somewhere in the source. Opt-in, via `adda audit --refs`.
 
@@ -32,13 +32,14 @@ Findings are `{"item": "file:line", "issue": "ref missing" | "path missing" | "l
 - **A path into `.git/` is `unresolved`, never missing (ADR-0022).** Git's directory is local machine state - an installed hook - not part of the tree.
 - **A path is checked only when its first segment exists in this repo.** Anything else - another repository, a bare filename relative to elsewhere, a slash command - is counted as `unresolved` and printed, never flagged.
 - **Paths:** brace lists expand and each member is checked; a leading `/` means the repo root; the path character set excludes globs and `<placeholders>`; gitignored paths are excused, since a generated file exists on one machine and not on a clean checkout; existence is matched with **exact case**, so a case-insensitive disk and a case-sensitive CI runner give the same answer.
-- **Which files are instructions is data from each tool's docs (ADR-0014).** `_ANY_DIR` lists what tools read in any directory, `_ROOT_ONLY` what they read at the root; both were verified against official docs on 2026-09-24. Names match with **exact case**, dependency and cache folders are skipped, and **gitignored instruction files are left out** - a personal file on one machine must not change the result on CI. A nested file's paths may anchor at the root or its own directory; missing means it anchors in one and exists in neither.
+- **Which files are instructions is data from each tool's docs (ADR-0014).** Claude Code Review's `REVIEW.md` is read in any directory too (ADR-0026, checked 2026-10-27). `_ANY_DIR` lists what tools read in any directory, `_ROOT_ONLY` what they read at the root; both were verified against official docs on 2026-09-24. Names match with **exact case**, dependency and cache folders are skipped, and **gitignored instruction files are left out** - a personal file on one machine must not change the result on CI. A nested file's paths may anchor at the root or its own directory; missing means it anchors in one and exists in neither.
 - **A cited conventional instruction filename or rules-file pattern that is absent is `unresolved`, not missing.** Docs about AI tooling list those names generically. Found by dogfooding - ADDA's own README tripped the rule on its first run, because `.github/` exists for workflows while the Copilot file does not.
 - **Markdown links are checked exactly (ADR-0020).** Inline links, images and reference definitions in instruction files resolve from the file's own folder (a leading `/` is the repo root), so a dead link inside the repo is always `link missing` - no first-segment guess. URLs, schemes and `#anchors` are skipped; `#fragment`/`?query` cut; percent-encoding and `<...>` undone; a link leaving the repo is unresolved. HTML `<a href>` is not read.
 - **It verifies what a file cites, never what it omits.** When `refs.py` was added, `CLAUDE.md`'s module list became incomplete and this check passed. That is the boundary, not a bug.
 
 ## Change Log (newest first)
 
+- [2026-10-27] ENH-ADDA-048 — `REVIEW.md` added to `_ANY_DIR` · Claude Code Review reads it at the root and in subdirectories, so a dead path in it is a skip rule or check that silently stopped applying (ADR-0026).
 - [2026-10-12] BUG-ADDA-033 — `_code_names` reads `.github` (`_CORPUS_DOT_DIRS`); other dot-folders stay skipped · ADR-0022 names workflows as definitions, but every dot-folder was skipped, so a fleet product's doc citing `workflow_dispatch` read as `ref missing`.
 - [2026-10-12] BUG-ADDA-032 — `_code_names` skips nested repositories and git-ignored files; the batched ignore check moved to `sync.git_ignored` · an ignored file or a nested repo could vouch for a name this repository does not define (ADR-0024).
 - [2026-10-12] ENH-ADDA-044 — the prose suffix list moved to `sync.PROSE_SUFFIXES`, shared with the map import · one definition of "prose" (ADR-0023).

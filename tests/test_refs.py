@@ -567,6 +567,18 @@ def test_nested_agents_file_resolves_paths_from_root_or_its_own_directory(tmp_pa
     assert stats["files"] == 1 and stats["paths"] == 4
 
 
+def test_review_md_is_read_at_the_root_and_in_subdirectories(tmp_path):
+    # ENH-ADDA-048: Code Review reads a root REVIEW.md and one per subdirectory.
+    _repo(
+        tmp_path,
+        {"src/app.py": ""},
+        {"REVIEW.md": "`src/gone.py`\n", "pkg/REVIEW.md": "`src/also_gone.py`\n"},
+    )
+    findings, _, stats = instructions_report(tmp_path)
+    assert _path_issues(findings) == ["src/also_gone.py", "src/gone.py"]
+    assert stats["files"] == 2
+
+
 def test_only_files_tools_read_nested_are_read_nested(tmp_path):
     # Copilot reads .github/copilot-instructions.md at the root only, and a
     # nested README is documentation, not an instruction file.
