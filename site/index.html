@@ -6,7 +6,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ADDA — Your code changed. Your docs should know.</title>
-<meta name="description" content="ADDA finds documentation that has quietly stopped being true, blocks the commit that introduces the drift, and reports what it could not determine. Git-native, deterministic, offline. MIT.">
+<meta name="description" content="ADDA finds documentation that has quietly stopped being true, blocks the commit that introduces the drift, and reports what it could not determine. Git-native, deterministic, offline by default. MIT.">
 <meta property="og:title" content="ADDA — Your code changed. Your docs should know.">
 <meta property="og:description" content="Stale documentation no longer just misleads people. It becomes AI context.">
 <meta property="og:type" content="website">
@@ -245,8 +245,8 @@ footer p{margin-top:18px;line-height:1.9}
     </div>
 
     <div class="meta">
-      <span>MIT</span><span>Python 3.10+</span><span>84 tests</span>
-      <span>no API key</span><span>deterministic · offline</span>
+      <span>MIT</span><span>Python 3.10+</span><span>254 tests</span>
+      <span>no API key</span><span>deterministic · <a href="https://github.com/vyasdx/adda-cli#what-leaves-your-machine">offline by default</a></span>
     </div>
   </div>
 </header>
@@ -391,7 +391,7 @@ footer p{margin-top:18px;line-height:1.9}
       committed together but the doc was updated wrongly, ancestry says they
       moved together and every check passes.</p>
     <p class="lead">Catching that needs a model reading both and forming a
-      judgement. ADDA is deterministic and offline by design, so it does not
+      judgement. ADDA is deterministic and makes no model calls by design, so it does not
       cross that line. The limit is published rather than left for you to find.</p>
   </div>
 </section>

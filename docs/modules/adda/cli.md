@@ -3,7 +3,7 @@
 
 # `cli` - `src/adda/cli.py`
 
-Last verified: 2026-10-16
+Last verified: 2026-11-02
 
 **Purpose** - ADDA's only entrypoint - the Typer app that wires the fifteen commands to the library modules.
 
@@ -39,6 +39,7 @@ Last verified: 2026-10-16
 
 ## Change Log (newest first)
 
+- [2026-11-02] ENH-ADDA-049 — `monitor --file` help now says when the file's text goes to Anthropic's token counter (claude-* model, `anthropic` extra, API key) · the only outbound flow was documented in the module doc alone (ADR-0027).
 - [2026-10-16] BUG-ADDA-034 — `hook install` stops with exit 1 when the hooks folder is outside the repository, naming it; `--force` covers a deliberately shared folder.
 - [2026-10-12] ENH-ADDA-046 — `sync --from` merges the imported map's exemptions into `exempt` and prints how many; `import_map` no longer takes `include` · any fleet map shape imports (ADR-0025).
 - [2026-10-12] ENH-ADDA-045 — `audit --refs` headline splits its total (`N finding(s): A from audit, R from --refs`) and `--json` adds `counts: {audit, refs}`; plain `audit` output and JSON are unchanged · two readers in wave 1 took a 21 + 1 total for a 22-finding `--refs` baseline.

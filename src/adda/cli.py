@@ -177,7 +177,14 @@ def monitor(
         None, "--tokens", "-t", help="Current token count to gauge."
     ),
     file: Optional[Path] = typer.Option(
-        None, "--file", "-f", help="Count tokens of this file instead of --tokens."
+        None,
+        "--file",
+        "-f",
+        help=(
+            "Count tokens of this file instead of --tokens. Its text is sent to Anthropic's "
+            "token counter only with a claude-* --model, the anthropic extra and "
+            "ANTHROPIC_API_KEY; otherwise it is estimated locally."
+        ),
     ),
     model: Optional[str] = typer.Option(
         None, "--model", "-m", help="Model id (sets default limit and counting accuracy)."

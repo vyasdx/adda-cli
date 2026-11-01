@@ -3,7 +3,7 @@
 
 # `sentinel` - `src/adda/sentinel.py`
 
-Last verified: 2026-10-09
+Last verified: 2026-11-02
 
 **Purpose** - Context Sentinel - the token-usage gauge that answers *when* to checkpoint.
 
@@ -17,7 +17,7 @@ Last verified: 2026-10-09
 
 ## Invariants
 
-- **This is ADDA's only outbound API call, and it is optional.** `count_tokens` uses the Anthropic SDK's `messages.count_tokens` for Claude-model accuracy and falls back to a chars/4 heuristic when the SDK, an API key, or a Claude model is absent. ADDA must stay fully usable offline. (Re-confirmed 2026-08-07: no generative call, ~$0 spend, no vendor lock-in.)
+- **This is ADDA's only outbound API call, and it is optional.** `count_tokens` uses the Anthropic SDK's `messages.count_tokens` for Claude-model accuracy and falls back to a chars/4 heuristic when the SDK, an API key, or a Claude model is absent. ADDA must stay fully usable offline. The flow is disclosed in `README.md` ("What leaves your machine") and in `monitor --file`'s help; a new outbound flow updates both in the same change (ADR-0027). (Re-confirmed 2026-08-07: no generative call, ~$0 spend, no vendor lock-in.)
 - It counts tokens; it never runs inference. No generative call belongs here.
 - `ContextSentinel` rejects a non-positive `limit`.
 - **`MODEL_LIMITS` is a small static map and will drift** as models ship. `--limit` is the escape hatch; the upgrade path is the Anthropic Models API (already flagged with a `ponytail:` comment in-file).
@@ -25,6 +25,7 @@ Last verified: 2026-10-09
 
 ## Change Log (newest first)
 
+- [2026-11-02] ENH-ADDA-049 — the outbound-call invariant now points to its public disclosure (README section, `--file` help) · it was stated here only, while the site called ADDA offline (BUG-ADDA-036, ADR-0027).
 - [2026-10-09] FIX-011 — `MODEL_LIMITS` gains `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5` and `claude-haiku-5-5` at 1,000,000 (checked against the claude-api skill's model table) · `adda monitor --model claude-haiku-5-5` fell back to the 200k default and reported 5x the real usage. The drift this doc's invariant predicted.
 - [2026-08-26] BUG-ADDA-012 — the Anthropic SDK is now an OPTIONAL extra (`pip install adda[anthropic]`) rather than a hard dependency · it is imported lazily and already falls back to chars/4, so requiring it contradicted the provider-agnostic scope guard and pulled a vendor SDK into every install of a tool that makes no inference calls.
 - [2026-08-25] BUG-ADDA-008 — dropped an internal message-ID reference from the outbound-call invariant · this file ships in the public export, and the reference leaked the company's internal operating name past a marker scan that could not see it.

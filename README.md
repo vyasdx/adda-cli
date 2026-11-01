@@ -209,6 +209,14 @@ pip install -e ".[dev]"
 
 Installs the `adda` console script.
 
+## What leaves your machine
+
+Nothing, by default. Every command reads your repository and its git history locally and writes only inside it. ADDA sends no telemetry and makes no model calls.
+
+One opt-in exception: `adda monitor --file F --model claude-...` sends the text of `F` to Anthropic's token-counting endpoint (`messages.count_tokens`), but only when the optional `anthropic` extra is installed (`pip install "adda[anthropic]"`) and `ANTHROPIC_API_KEY` is set. It counts tokens and generates nothing, and the request goes out under your own Anthropic account. If any of the three is missing, `monitor` estimates locally (characters / 4) and its output says `via heuristic`. To use a Claude model's window and stay local, pass the window instead of the model: `adda monitor --file F --limit 1000000`.
+
+**Regulation** (our reading, not legal advice). ADDA's publisher collects and stores no personal data, so it processes none under India's Digital Personal Data Protection Act 2023. If you send a file that contains personal data through the token count above, that transfer is yours, to Anthropic under your account. ADDA is not an AI system under the EU AI Act: it runs fixed, human-written rules and infers nothing from data.
+
 
 **CI.** `.github/workflows/ci.yml` runs the tests plus `adda diff`, `adda audit` and a `adda eval` assertion that load-bearing fidelity stays at 100%, on Python 3.10 and 3.13. It checks out with `fetch-depth: 0` because `audit` decides staleness from git ancestry and a shallow clone cannot answer that.
 
