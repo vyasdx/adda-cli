@@ -168,7 +168,23 @@ def git_ignored(repo: Path, rels: list) -> set:
         )
     except (OSError, subprocess.SubprocessError):
         return set()
-    return {p for p in out.stdout.decode("utf-8").split("\0") if p}
+    ignored = {p for p in out.stdout.decode("utf-8").split("\0") if p}
+    if ignored:
+        # BUG-ADDA-038: check-ignore spares a tracked file only if the index lists
+        # it. An index left empty by a failed checkout made every committed file
+        # matching a pattern read as ignored; a file in HEAD is tracked regardless.
+        ignored -= _committed(repo)
+    return ignored
+
+
+def _committed(repo: Path) -> set:
+    """Paths in HEAD's tree, relative to `repo`; empty outside git or before a commit."""
+    try:
+        out = subprocess.run(["git", "ls-tree", "-r", "-z", "--name-only", "HEAD"],
+                             cwd=repo, capture_output=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {p for p in out.stdout.decode("utf-8").split("\0") if p} if out.returncode == 0 else set()
 
 
 def in_nested_repo(repo: Path, rel: str) -> bool:

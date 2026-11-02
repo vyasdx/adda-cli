@@ -3,7 +3,7 @@
 
 # `sync` - `src/adda/sync.py`
 
-Last verified: 2026-10-12
+Last verified: 2026-11-02
 
 **Purpose** - Derive an ADDA architecture *skeleton* from a codebase, so the docs can be refreshed instead of rotting.
 
@@ -20,7 +20,7 @@ Last verified: 2026-10-12
 - **Loose source files at the base dir are mapped, and are exempt from the package test.** They can never carry an `__init__.py`, so judging them by it would re-hide exactly the files BUG-ADDA-018/019 were about.
 - **Tool configuration is not a documentable module.** Dotfiles and `*.config.*` are filtered, `setup.py`/`conftest.py` land in `exempt` - visible, not dropped. Mapping the repo root made this reachable for the first time.
 - A root-level `adda/` is the scaffolded *data* dir and is skipped - but `src/adda` (the package) is kept.
-- **The code is what git sees (ADR-0024).** `source_roots` drops files git ignores (`git_ignored`, one batched `git check-ignore`) and files inside a nested repository (`in_nested_repo`: a directory below the root with its own `.git`). Outside git nothing is dropped.
+- **The code is what git sees (ADR-0024).** `source_roots` drops files git ignores (`git_ignored`, one batched `git check-ignore`; a path in HEAD's tree is never ignored, whatever the index holds - BUG-ADDA-038) and files inside a nested repository (`in_nested_repo`: a directory below the root with its own `.git`). Outside git nothing is dropped.
 - **A product's existing map is imported once with `--from` (ADR-0023, ADR-0025).** `import_map` reads any object naming a `doc` and its code (`path`/`file`/`code`/`owns`/`covers`, via `_map_pairs`) or ADDA's `map`; an existing exact path is that file (brackets included); a folder or wildcard covers the text files git sees under it, prose and binaries excepted (`_text_files`), and an exact entry beats it; a section whose `root` is another checkout is skipped; `ignored`/`exempt` lists return as exemptions (`_exemptions`); prose (`PROSE_SUFFIXES`) is not imported, since a doc is not code; every entry left out is returned as a note with its reason; input that is not a map raises. The map's own entries win over the import.
 - **Regenerating the map keeps a product's choices (ADR-0019).** An existing entry is kept while its file exists - whatever kind of file: a SQL migration or a schema a product mapped is kept too, and audit and the hook check it like any entry (BUG-ADDA-031) - so hand-named docs survive; an entry that points outside the repository is dropped; only code the map has never seen gets a mirrored path. A hand-written exempt pattern is kept and wins over an older map entry; an exact exempt path whose file is gone is dropped. Delete the file to start over.
 - **New code goes to the one module doc that names it (ADR-0021).** `declared_docs` reads live lines of docs under `doc_dir` for a backticked existing source path (a `:line` suffix and leading `/` allowed); a file named by exactly one doc is claimed by it, a file named by two is left to the mirrored default. Precedence: written exemption > the map's previous entry > generated exemption > naming doc > mirrored path.
@@ -29,6 +29,7 @@ Last verified: 2026-10-12
 
 ## Change Log (newest first)
 
+- [2026-11-02] BUG-ADDA-038 — `git_ignored` never reports a path in HEAD's tree (`_committed`) · `check-ignore` spares a tracked file only if the index lists it; six case-study clones had an empty index after a failed Windows checkout, so committed files matching an ignore pattern read as ignored and `--refs` reported 38 false `missing` on next.js.
 - [2026-10-12] ENH-ADDA-046 — `import_map` reads every fleet map shape (`_map_pairs`), expands folders and wildcards to text files (`_text_files`), skips foreign-root sections, returns exemptions; returns `(entries, notes, exempt)` · four wave-2 products keep hand maps in four schemas that 0.5.3 refused; files at an existing doc 54->96, 43->80, 1->25, 21->76 (ADR-0025). A bracketed Next.js route path read as a wildcard was caught on a real repo and fixed before commit.
 - [2026-10-12] BUG-ADDA-032 — `git_ignored` and `in_nested_repo` added; `source_roots` drops git-ignored files and nested repositories · a fleet product's working tree held a git-ignored nested repo, and `audit` reported 5 `doc missing` no fresh clone could reproduce (40 source files counted on its real tree, 6 of them not its own; now 34) (ADR-0024).
 - [2026-10-12] ENH-ADDA-044 — `import_map` and `PROSE_SUFFIXES` added; `sync --map --from` seeds the map from a product's existing one · three fleet products keep hand maps ADDA could not read (fleet format, folder entries); imported, files at an existing doc went 22->37, 76->111, 61->79, with every skipped entry named (ADR-0023).

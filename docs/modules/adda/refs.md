@@ -3,7 +3,7 @@
 
 # `refs` - `src/adda/refs.py`
 
-Last verified: 2026-10-27
+Last verified: 2026-11-02
 
 **Purpose** - The deterministic slice of the gap ancestry cannot see (ADR-0010, ADR-0011). `audit` decides staleness by commit ancestry, so a doc committed alongside its code reads as current even when it names a function deleted in that same commit. `refs` checks that every code name a mapped doc cites still appears somewhere in the source. Opt-in, via `adda audit --refs`.
 
@@ -35,10 +35,14 @@ Findings are `{"item": "file:line", "issue": "ref missing" | "path missing" | "l
 - **Which files are instructions is data from each tool's docs (ADR-0014).** Claude Code Review's `REVIEW.md` is read in any directory too (ADR-0026, checked 2026-10-27). `_ANY_DIR` lists what tools read in any directory, `_ROOT_ONLY` what they read at the root; both were verified against official docs on 2026-09-24. Names match with **exact case**, dependency and cache folders are skipped, and **gitignored instruction files are left out** - a personal file on one machine must not change the result on CI. A nested file's paths may anchor at the root or its own directory; missing means it anchors in one and exists in neither.
 - **A cited conventional instruction filename or rules-file pattern that is absent is `unresolved`, not missing.** Docs about AI tooling list those names generically. Found by dogfooding - ADDA's own README tripped the rule on its first run, because `.github/` exists for workflows while the Copilot file does not.
 - **Markdown links are checked exactly (ADR-0020).** Inline links, images and reference definitions in instruction files resolve from the file's own folder (a leading `/` is the repo root), so a dead link inside the repo is always `link missing` - no first-segment guess. URLs, schemes and `#anchors` are skipped; `#fragment`/`?query` cut; percent-encoding and `<...>` undone; a link leaving the repo is unresolved. HTML `<a href>` is not read.
+- **A span counts only when its own sentence claims it exists here (ADR-0028).** Skipped: the text of a link to a URL; a sentence that puts it elsewhere or hedges it ("installed package", "source repository", "upstream", "frontmatter", "env var", "if exists", "if present", "can be added/created"); a span right after "a"/"an", "not", "instead of", "rather than" or a capitalised possessive; a name ending in a lone capital (`BaseX`); `actions/<name>` paths. Found on 11 public repositories, where these were 15 of 21 findings (BUG-ADDA-039).
+- **The name corpus is read on 32 threads (BUG-ADDA-040).** Opening a file, not reading it, is the cost under Windows on-access scanning; opens overlap.
 - **It verifies what a file cites, never what it omits.** When `refs.py` was added, `CLAUDE.md`'s module list became incomplete and this check passed. That is the boundary, not a bug.
 
 ## Change Log (newest first)
 
+- [2026-11-02] BUG-ADDA-040 — `_code_names` reads files on a 32-thread pool (`_read_code`) · profiling deno showed 129 of 140 s in `io.open`, ~9-20 ms per file under Windows on-access scanning; TypeScript took 18 minutes for 2 instruction files.
+- [2026-11-02] BUG-ADDA-039 — `_claims` keeps only spans their sentence claims; `_METAVAR`, `_ACTION` · on 11 public repositories 15 of 21 findings were names and paths the text never claimed exist (ADR-0028).
 - [2026-10-27] ENH-ADDA-048 — `REVIEW.md` added to `_ANY_DIR` · Claude Code Review reads it at the root and in subdirectories, so a dead path in it is a skip rule or check that silently stopped applying (ADR-0026).
 - [2026-10-12] BUG-ADDA-033 — `_code_names` reads `.github` (`_CORPUS_DOT_DIRS`); other dot-folders stay skipped · ADR-0022 names workflows as definitions, but every dot-folder was skipped, so a fleet product's doc citing `workflow_dispatch` read as `ref missing`.
 - [2026-10-12] BUG-ADDA-032 — `_code_names` skips nested repositories and git-ignored files; the batched ignore check moved to `sync.git_ignored` · an ignored file or a nested repo could vouch for a name this repository does not define (ADR-0024).

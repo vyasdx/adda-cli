@@ -70,7 +70,7 @@ def test_cited_name_deleted_from_code_is_flagged_with_its_line(tmp_path):
 
 
 def test_call_form_is_normalised(tmp_path):
-    _project(tmp_path, "Call `compare_commits()`, not `gone_function()`.\n")
+    _project(tmp_path, "Call `compare_commits()`, then `gone_function()`.\n")
     findings, _, stats = refs_report(tmp_path, tmp_path / "adda")
     assert _missing(findings) == ["gone_function"]
     assert stats["refs"] == 2
@@ -752,3 +752,71 @@ def test_a_name_defined_only_in_a_github_workflow_counts(tmp_path):
 def test_other_dot_folders_still_do_not_vouch(tmp_path):
     _project(tmp_path, "Calls `ghost_helper`.\n", extra={".cache/build.js": "function ghost_helper() {}\n"})
     assert _missing(refs_report(tmp_path, tmp_path / "adda")[0]) == ["ghost_helper"]
+
+
+# --- BUG-ADDA-039: a span its own sentence does not claim exists here ---------
+# Every line below is quoted from a public repository's instruction file in the
+# 2026-11-02 case study (docs/case-study-2026-11.md), where each was flagged.
+
+NOT_CLAIMS = [
+    # names from outside the repository
+    "Plugin agents silently ignore the `hooks`, `mcpServers`, and `permissionMode` frontmatter fields.",
+    "When Corridor's `analyzePlan` tool is available, create a plan.",
+    "Ruff's formatter is built on a fork of Rome's [`rome_formatter`](https://github.com/rome/tools),",
+    "Remove `*/incremental` directories (default `target/`, or check `CARGO_TARGET_DIR` env var)",
+    "Read `docs/README.md` inside that installed package first.",
+    "In the Turborepo source repository, its template is defined in `crates/turborepo-cli/src/cli/agent_guidance.rs`.",
+    # counter-examples and hypotheticals
+    "Don't pair a message-format constant with a `make_error()` helper.",
+    # naming patterns
+    "- **Functions get an `async_` prefix.**",
+    "- **`BaseX`, not `XBase`.** Base classes are named like this.",
+    # hedged, or to be created
+    "- `turbopack/README.md` (if exists)",
+    "Optional slash commands can be added under `.opencode/commands/`.",
+]
+
+
+def test_spans_the_sentence_does_not_claim_are_not_checked():
+    for line in NOT_CLAIMS:
+        assert extract_refs(line) == [] and extract_paths(line) == [], line
+
+
+def test_the_counter_example_is_skipped_and_the_example_kept():
+    line = "- **Name things for what they mean,** not how: `TRANSIENT_ERRORS`, not `RETRYABLE_EXCEPTION_TUPLE`."
+    assert extract_refs(line) == [(1, "TRANSIENT_ERRORS")]
+
+
+def test_real_findings_from_the_case_study_are_still_claims():
+    # React compiler/CLAUDE.md and Deno's Copilot instructions: names that exist nowhere.
+    assert extract_refs("**`tryRecord()` wrapper** - In Pipeline.ts, validation passes are "
+                        "wrapped. Other passes are NOT wrapped in `tryRecord()` because.") \
+        == [(1, "tryRecord"), (1, "tryRecord")]
+    assert extract_refs("- `#[cfg(unix)]` code that calls `find_descendant_pids` or similar") \
+        == [(1, "find_descendant_pids")]
+    # Only the sentence that hedges is skipped, not the whole line.
+    assert extract_refs("Optional: see `old_one` if present. Calls `gone_helper` daily.") \
+        == [(1, "gone_helper")]
+
+
+def test_a_github_action_is_not_a_path(tmp_path):
+    _repo(tmp_path, {"src/app.py": "", ".github/actions/setup/action.yml": ""},
+          {".github/AGENTS.md": "- When using `actions/checkout`, pass `persist-credentials: false`.\n"})
+    findings, _, stats = instructions_report(tmp_path)
+    assert findings == [] and stats["unresolved"] == 1
+
+
+# --- BUG-ADDA-038: an empty index must not make committed files read as ignored ---
+
+
+def test_committed_file_matching_an_ignore_pattern_still_defines_names(tmp_path):
+    _project(tmp_path, "Calls `kept_helper`.\n", extra={"gen/keep.js": "function kept_helper() {}\n",
+                                                         ".gitignore": "gen/\n"})
+    _git_init(tmp_path)
+    git = ["git", "-C", str(tmp_path), "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run(git + ["add", "-A", "-f"], check=True)
+    subprocess.run(git + ["commit", "-qm", "x"], check=True)
+    assert refs_report(tmp_path, tmp_path / "adda")[0] == []
+    # A failed checkout leaves the index empty while the files sit on disk.
+    subprocess.run(git + ["read-tree", "--empty"], check=True)
+    assert refs_report(tmp_path, tmp_path / "adda")[0] == []

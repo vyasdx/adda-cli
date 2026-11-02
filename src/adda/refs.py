@@ -29,6 +29,7 @@ import os
 import posixpath
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from fnmatch import fnmatchcase
 from pathlib import Path
 from urllib.parse import unquote
@@ -65,6 +66,34 @@ _SPAN = re.compile(r"`([^`\n]+)`")
 _NAME = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(\(\))?$")
 _CAMEL = re.compile(r"[a-z][A-Z]")
 _NOT_OURS = set(dir(builtins)) | set(keyword.kwlist)
+# `BaseX`: a naming pattern, the trailing capital stands for any name (BUG-ADDA-039).
+_METAVAR = re.compile(r"[a-z][A-Z]$")
+
+# BUG-ADDA-039: spans whose own sentence does not claim they exist here. On 11
+# public repositories 15 of 21 findings were these; ADDA's and the fleet's files
+# rarely hit them because they were written to be checked, outsiders' prose is not.
+# A link to a URL names another project's thing: [`rome_formatter`](https://...).
+_URL_LINK = re.compile(r"!?\[[^\]]*\]\((?:[A-Za-z][A-Za-z0-9+.-]*:|//)[^)]*\)")
+# The sentence puts it elsewhere, hedges it, or says to create it.
+_ELSEWHERE = re.compile(
+    r"\b(?:if (?:it )?exists|if present|can be (?:added|created)"
+    r"|installed package|source repository|upstream|frontmatter|env(?:ironment)? var)",
+    re.I,
+)
+# Right before the span: "a `make_error()` helper" (hypothetical), "`X`, not `Y`"
+# (counter-example), "Corridor's `analyzePlan`" (someone else's).
+_NOT_A_CLAIM = re.compile(r"(?:\b(?:[Aa]n?|not|instead of|rather than)|\b[A-Z][\w-]*['’]s)\s+$")
+_SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z*`(])")
+
+
+def _claims(line: str):
+    """Backticked spans on a line that claim the thing exists in this repo."""
+    for sentence in _SENTENCE.split(_URL_LINK.sub("", line)):
+        if _ELSEWHERE.search(sentence):
+            continue
+        for m in _SPAN.finditer(sentence):
+            if not _NOT_A_CLAIM.search(sentence[: m.start()]):
+                yield m.group(1)
 
 
 def _code_name(span: str):
@@ -77,7 +106,7 @@ def _code_name(span: str):
     if not m:
         return None
     name, called = m.group(1), m.group(2)
-    if name in _NOT_OURS or len(name.strip("_")) < 2:
+    if name in _NOT_OURS or len(name.strip("_")) < 2 or _METAVAR.search(name):
         return None
     if "_" in name or called or _CAMEL.search(name):
         return name
@@ -145,7 +174,7 @@ def extract_refs(text: str) -> list[tuple[int, str]]:
     return [
         (number, name)
         for number, line in _live_lines(text)
-        for span in _SPAN.findall(line)
+        for span in _claims(line)
         if (name := _code_name(span))
     ]
 
@@ -167,19 +196,27 @@ def _code_names(repo: Path):
     # ...and an ignored file exists on one machine only, so it defines nothing.
     rel = {p: p.relative_to(repo).as_posix() for p in candidates}
     ignored = git_ignored(repo, list(rel.values()))
-    for path in candidates:
-        if rel[path] in ignored:
-            continue
-        try:
-            if path.stat().st_size > _CORPUS_MAX_BYTES:
+    keep = [p for p in candidates if rel[p] not in ignored]
+    # BUG-ADDA-040: opening a file is the cost, not reading it - ~20 ms each under
+    # Windows on-access scanning, 18 minutes on TypeScript - and opens overlap.
+    with ThreadPoolExecutor(max_workers=32) as pool:
+        for path, text in zip(keep, pool.map(_read_code, keep)):
+            if text is None:
                 continue
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue  # binary or unreadable: defines nothing a doc can cite
-        if path.name.endswith(SOURCE_SUFFIXES):
-            files += 1  # "is there code at all" still means source code
-        names.update(_IDENT.findall(text))
+            if path.name.endswith(SOURCE_SUFFIXES):
+                files += 1  # "is there code at all" still means source code
+            names.update(_IDENT.findall(text))
     return names if files else None
+
+
+def _read_code(path: Path):
+    """A file's text, or None if it is too large to be a definition, binary or unreadable."""
+    try:
+        if path.stat().st_size > _CORPUS_MAX_BYTES:
+            return None
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
 
 
 def refs_report(repo: Path, adda_dir: Path) -> tuple[list[dict], list, dict]:
@@ -305,6 +342,7 @@ def _generic(path: str) -> bool:
 _PATH_CHARS = re.compile(r"^[A-Za-z0-9_.{},/-]+$")
 _EXTENSION = re.compile(r"\.[A-Za-z0-9]{1,6}$")
 _BRACES = re.compile(r"\{([^{}]*)\}")
+_ACTION = re.compile(r"^actions/[\w.-]+$")
 
 
 def _expand_braces(path: str) -> list[str]:
@@ -325,7 +363,7 @@ def extract_paths(text: str) -> list[tuple[int, str]]:
     """
     out = []
     for number, line in _live_lines(text):
-        for span in _SPAN.findall(line):
+        for span in _claims(line):
             span = span.strip()
             if not _PATH_CHARS.match(span):
                 continue
@@ -462,9 +500,10 @@ def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:
             # name, generically. Citing one is not a claim that it exists here -
             # found when ADDA's own README tripped this rule on its first run.
             first = path.split("/")[0]
-            if first == ".git":
+            if first == ".git" or _ACTION.match(path):
                 # BUG-ADDA-030: git's own directory is local machine state (an
                 # installed hook), never part of the tree. It cannot be decided.
+                # BUG-ADDA-039: `actions/checkout` is a GitHub Action, not a path.
                 stats["unresolved"] += 1
                 continue
             anchored = [f"{b}/{path}" if b else path for b in bases
