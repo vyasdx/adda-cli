@@ -749,8 +749,11 @@ def test_a_name_defined_only_in_a_github_workflow_counts(tmp_path):
     assert refs_report(tmp_path, tmp_path / "adda")[0] == []
 
 
-def test_other_dot_folders_still_do_not_vouch(tmp_path):
-    _project(tmp_path, "Calls `ghost_helper`.\n", extra={".cache/build.js": "function ghost_helper() {}\n"})
+def test_an_ignored_dot_folder_still_does_not_vouch(tmp_path):
+    # BUG-ADDA-041 replaced "only .github": a tool's cache is gitignored, so it drops out there.
+    _project(tmp_path, "Calls `ghost_helper`.\n", extra={".cache/build.js": "function ghost_helper() {}\n",
+                                                          ".gitignore": ".cache/\n"})
+    _git_init(tmp_path)
     assert _missing(refs_report(tmp_path, tmp_path / "adda")[0]) == ["ghost_helper"]
 
 
@@ -820,3 +823,55 @@ def test_committed_file_matching_an_ignore_pattern_still_defines_names(tmp_path)
     # A failed checkout leaves the index empty while the files sit on disk.
     subprocess.run(git + ["read-tree", "--empty"], check=True)
     assert refs_report(tmp_path, tmp_path / "adda")[0] == []
+
+
+# --- BUG-ADDA-041: names live in docs/, build/ and committed dot-folders too ---
+# Lines from the round-3 case study (vercel/ai, databricks, hasura, PostHog).
+
+
+def test_names_in_docs_build_and_storybook_folders_count(tmp_path):
+    _repo(tmp_path, {"src/app.ts": "export const x = 1\n",
+                     "apps/docs/next.config.ts": "export const createGeistdocs = 1\n",
+                     "internal/build/license.go": "var spdxLicenses = 1\n",
+                     ".storybook/preview.tsx": "export const mswLoader = 1\n"},
+          {"AGENTS.md": "Use `createGeistdocs`, `spdxLicenses` and the `mswLoader` loader.\n"})
+    assert instructions_report(tmp_path)[0] == []
+
+
+def test_a_name_that_is_a_file_name_counts(tmp_path):
+    _repo(tmp_path, {"management/commands/reingest_signal_report.py": "x = 1\n"},
+          {"AGENTS.md": "Run the `reingest_signal_report` command.\n"})
+    assert instructions_report(tmp_path)[0] == []
+
+
+# --- BUG-ADDA-042: how instruction files name paths ---------------------------
+
+
+def test_a_brace_placeholder_path_is_a_pattern():
+    assert extract_paths("Models live in `src/sentry/models/{model}.py`.") == []
+    assert extract_paths("`src/{a,b}.py`") == [(1, "src/a.py"), (1, "src/b.py")]
+
+
+def test_an_import_style_path_matches_its_source_file(tmp_path):
+    _repo(tmp_path, {"frontend/src/lib/api.ts": "", "frontend/src/lib/scenes/index.tsx": ""},
+          {"frontend/src/AGENTS.md": "Call through `lib/api` and `lib/scenes`, not `lib/gone`.\n"})
+    assert _path_issues(instructions_report(tmp_path)[0]) == []
+    _write(tmp_path, "frontend/src/AGENTS.md", "Call through `lib/api` and then `lib/gone`.\n")
+    assert _path_issues(instructions_report(tmp_path)[0]) == ["lib/gone"]
+
+
+def test_a_nested_file_resolves_paths_from_its_package_root(tmp_path):
+    # As in humanlayer: the root has its own `src/`, so the path is checked, then found under the package.
+    _repo(tmp_path, {"src/main.ts": "", "apps/riptide-ui/src/hooks/use-layout.ts": "",
+                     "apps/riptide-ui/package.json": "{}"},
+          {"apps/riptide-ui/src/minimalist/CLAUDE.md":
+           "The hook is `src/hooks/use-layout.ts`, and then `src/hooks/gone.ts`.\n"})
+    assert _path_issues(instructions_report(tmp_path)[0]) == ["src/hooks/gone.ts"]
+
+
+def test_a_path_inside_a_submodule_is_unresolved_not_missing(tmp_path):
+    _repo(tmp_path, {"src/app.ts": "", ".gitmodules": '[submodule "effect"]\n\tpath = ts/vendor/effect\n',
+                     "ts/vendor/effect/.keep": ""},
+          {"AGENTS.md": "Patched in `ts/vendor/effect/packages/effect/src/Schema.ts`.\n"})
+    findings, _, stats = instructions_report(tmp_path)
+    assert findings == [] and stats["unresolved"] == 1

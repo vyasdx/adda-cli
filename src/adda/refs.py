@@ -42,10 +42,12 @@ from adda.sync import IGNORE_DIRS, PROSE_SUFFIXES, SOURCE_SUFFIXES, git_ignored
 # anywhere in the code?", and a doc may legitimately cite a name that lives in a
 # test helper or a script. Searching more code can only turn a flag into a pass,
 # which is the safe direction for a rule whose failure mode is false alarms.
-_CORPUS_SKIP = IGNORE_DIRS - {"tests", "test", "scripts", "examples", ".github"}
-# BUG-ADDA-033: the one dot-folder a project writes by hand - its CI workflows
-# define names a doc may cite (ADR-0022). Every other dot-folder is a tool's.
-_CORPUS_DOT_DIRS = {".github"}
+# BUG-ADDA-041: only dependency, environment and cache trees. `docs`, `build` and
+# dot-folders hold real code too (`apps/docs/next.config.ts`, Go's `internal/build`,
+# `.storybook/preview.tsx`); build output and tool caches are gitignored, and an
+# ignored file is dropped below (ADR-0024).
+_CORPUS_SKIP = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", "site-packages",
+                "dist", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".next", ".turbo"}
 # BUG-ADDA-030: a name is defined wherever the project defines it - a SQL
 # migration, a Prisma schema, a shell script, a workflow - not only in source
 # code. Prose (`sync.PROSE_SUFFIXES`) is the one exception: a doc must not vouch
@@ -189,7 +191,6 @@ def _code_names(repo: Path):
     for dirpath, dirnames, filenames in os.walk(repo):
         # BUG-ADDA-032: a nested repository is someone else's code.
         dirnames[:] = [d for d in dirnames if d not in _CORPUS_SKIP
-                       and (not d.startswith(".") or d in _CORPUS_DOT_DIRS)
                        and not (Path(dirpath) / d / ".git").exists()]
         candidates += [Path(dirpath) / f for f in filenames
                        if not f.lower().endswith(PROSE_SUFFIXES)]
@@ -206,6 +207,7 @@ def _code_names(repo: Path):
             if path.name.endswith(SOURCE_SUFFIXES):
                 files += 1  # "is there code at all" still means source code
             names.update(_IDENT.findall(text))
+            names.add(path.stem)  # BUG-ADDA-041: a command or test is named by its file
     return names if files else None
 
 
@@ -350,6 +352,8 @@ def _expand_braces(path: str) -> list[str]:
     m = _BRACES.search(path)
     if not m:
         return [path]
+    if "," not in m.group(1):
+        return []  # BUG-ADDA-042: `{model}` is a placeholder, so the path is a pattern
     head, tail = path[: m.start()], path[m.end():]
     return [p for part in m.group(1).split(",") for p in _expand_braces(head + part + tail)]
 
@@ -434,6 +438,23 @@ def _exists_exact(repo: Path, rel: str) -> bool:
     return True
 
 
+def _module_forms(path: str) -> list[str]:
+    """`lib/api` is how an import names `lib/api.ts` (BUG-ADDA-042): an extensionless
+    path also matches a source file or a package index of that name."""
+    if _EXTENSION.search(path) or path.endswith("/"):
+        return [path]
+    return [path] + [path + s for s in SOURCE_SUFFIXES] + [f"{path}/index{s}" for s in SOURCE_SUFFIXES]
+
+
+def _submodules(repo: Path) -> list[str]:
+    """Paths of git submodules, each with a trailing `/`, from `.gitmodules`."""
+    try:
+        text = (repo / ".gitmodules").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    return [m.strip().strip("/") + "/" for m in re.findall(r"^\s*path\s*=\s*(.+)$", text, re.M)]
+
+
 def _ignored(repo: Path, rel: str) -> bool:
     """Is `rel` gitignored? A generated file exists on a working machine and not on
     a clean checkout, so it is neither present nor missing - just not ours to check."""
@@ -475,11 +496,18 @@ def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:
     names = _code_names(repo)
     if names is None:
         skipped.append("instruction-file name check skipped: no source files found")
+    submodules = _submodules(repo)
     unreadable = []
     for rel, home in present:
         # Where a cited path may be anchored: the root, and for a nested file
         # its own directory too - tools differ, and few document it.
         bases = [""] + ([home] if home else [])
+        # BUG-ADDA-042: once anchored, it may be found from any folder between,
+        # since a sub-project's file cites paths from its package root. Only for
+        # finding: anchoring from those folders too made package import names
+        # (`agents/client`) read as paths, 86 new false findings on round 3.
+        parts = home.split("/") if home else []
+        roots = [""] + ["/".join(parts[:i]) for i in range(len(parts), 0, -1)]
         try:
             text = (repo / rel).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
@@ -500,10 +528,12 @@ def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:
             # name, generically. Citing one is not a claim that it exists here -
             # found when ADDA's own README tripped this rule on its first run.
             first = path.split("/")[0]
-            if first == ".git" or _ACTION.match(path):
+            if first == ".git" or _ACTION.match(path) or any(
+                    f"{b}/{path}".lstrip("/").startswith(s) for b in bases for s in submodules):
                 # BUG-ADDA-030: git's own directory is local machine state (an
                 # installed hook), never part of the tree. It cannot be decided.
                 # BUG-ADDA-039: `actions/checkout` is a GitHub Action, not a path.
+                # BUG-ADDA-042: a submodule's files are another repository's.
                 stats["unresolved"] += 1
                 continue
             anchored = [f"{b}/{path}" if b else path for b in bases
@@ -512,7 +542,9 @@ def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:
                 stats["unresolved"] += 1
                 continue
             stats["paths"] += 1
-            if not any(_exists_exact(repo, p) or _ignored(repo, p) for p in anchored):
+            found = [f"{r}/{path}" if r else path for r in roots]
+            if not any(_exists_exact(repo, q) or _ignored(repo, q)
+                       for p in found for q in _module_forms(p)):
                 findings.append({
                     "item": f"{rel}:{line}", "issue": "path missing",
                     "severity": "medium", "ref": path,
