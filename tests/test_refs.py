@@ -884,3 +884,17 @@ def test_a_path_inside_a_submodule_is_unresolved_not_missing(tmp_path):
           {"AGENTS.md": "Patched in `ts/vendor/effect/packages/effect/src/Schema.ts`.\n"})
     findings, _, stats = instructions_report(tmp_path)
     assert findings == [] and stats["unresolved"] == 1
+
+
+# --- BUG-ADDA-044: foo/bar template names -------------------------------------
+
+
+def test_foo_bar_template_names_are_placeholders():
+    # As in TrueFoundry's AGENTS.md: the API conventions are written for a resource called Foo.
+    text = ("Request types are `CreateFooRequest` and `ListFoosResponse`; handlers are `create_bar`.\n"
+            "The real one is `CreateUserRequest`.\n")
+    assert extract_refs(text) == [(2, "CreateUserRequest")]
+
+
+def test_bar_without_a_foo_is_a_real_name():
+    assert extract_refs("Render the `StatusBar` and the `BazClient`.\n") == [(1, "StatusBar")]

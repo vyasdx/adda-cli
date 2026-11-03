@@ -23,6 +23,7 @@ Findings are `{"item": "file:line", "issue": "ref missing" | "path missing" | "l
 - **History sections are not checked.** A heading matching change log or history starts one, and it runs until the next heading at the same or shallower level. A Change Log exists to name code that is gone.
 - **Only code-shaped spans count.** A backticked span is a reference only if it is a bare identifier - optionally written as a call - that is snake_case, CamelCase or called. Builtins and keywords are excluded. Paths, flags, dotted names, filenames and plain words are ignored, and so are fenced code blocks.
 - **A name the doc's own fenced example defines is described, not claimed (BUG-ADDA-026).** `def`/`class`/`function`/`const`/`let`/`var NAME`, or `NAME:` / `NAME =` at the start of a line inside a fence. Only definitions: a name an example merely uses is still checked, so a stale example calling deleted code cannot excuse the prose citing it. Found on fastapi's README (`is_offer`).
+- **Foo/bar names are placeholders (BUG-ADDA-044).** A name with a `foo`, `baz` or `qux` word (`CreateFooRequest`, `list_foos`) documents a naming convention, not code; `bar` counts only in a doc that also uses foo, so `StatusBar` is still checked. Found on TrueFoundry's AGENTS.md (28 false findings).
 - **Cannot tell is skipped, never passed.** No source files at all, or a doc that cannot be decoded, is reported in `skipped`. With nothing to compare against, every cited name would read as missing - a false alarm, not a finding.
 - **Always states how much it checked.** The CLI prints `checked N code name(s) cited in M doc(s)`, so a rule that looked at nothing can never read as a clean pass.
 - **A missing doc is not re-reported.** That is `audit` rule 1's finding; `refs` skips a mapped doc that does not exist.
@@ -42,6 +43,7 @@ Findings are `{"item": "file:line", "issue": "ref missing" | "path missing" | "l
 
 ## Change Log (newest first)
 
+- [2026-11-03] BUG-ADDA-044 — `extract_refs` drops names built on foo/bar/baz/qux (`_meta`); `bar` only beside a foo · round 4: TrueFoundry's API conventions are written for a resource called Foo, 28 false `ref missing`; no hand-checked real finding in rounds 3-4 has such a word.
 - [2026-11-03] BUG-ADDA-043 — `extract_paths` keeps a leading `/`, and `instructions_report` anchors such a path at the root only · round 4: DataDog's `test/fakeintake/AGENTS.md` route table (`/api/v1/series`) sits beside `test/fakeintake/api/`, so 28 routes were checked from the file's folder and flagged; ADR-0012 already said a leading `/` is the repo root.
 - [2026-11-02] BUG-ADDA-042 — `_expand_braces` returns nothing for a comma-less `{placeholder}`; `_module_forms`, `_submodules`; nested files anchor at every ancestor folder · round 3 (28 repos): 77 false path findings came from placeholders, import-style paths, sub-project roots and submodules (ADR-0029).
 - [2026-11-02] BUG-ADDA-041 — `_CORPUS_SKIP` is dependency, environment and cache trees only (`docs`, `build`, dot-folders now read; `_CORPUS_DOT_DIRS` gone); file stems are names · round 3: 31 false `ref missing` were names defined in those folders or named by a file (ADR-0029).

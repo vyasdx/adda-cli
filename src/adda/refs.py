@@ -171,14 +171,29 @@ def _example_defs(text: str) -> set[str]:
     return defs
 
 
+# BUG-ADDA-044: `CreateFooRequest` documents a naming convention, foo standing for
+# any resource. `bar` is a placeholder too, but only beside a foo: `StatusBar` is real.
+_WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
+_METASYNTACTIC = {"foo", "bar", "baz", "qux"}
+
+
+def _meta(name: str) -> set[str]:
+    return {w.lower().removesuffix("s") for w in _WORD.findall(name)} & _METASYNTACTIC
+
+
 def extract_refs(text: str) -> list[tuple[int, str]]:
-    """(line number, name) for every code name cited on a live line."""
-    return [
+    """(line number, name) for every code name cited on a live line.
+
+    Names built on foo/bar/baz/qux are placeholders, not claims.
+    """
+    refs = [
         (number, name)
         for number, line in _live_lines(text)
         for span in _claims(line)
         if (name := _code_name(span))
     ]
+    foo = any("foo" in _meta(n) for _, n in refs)
+    return [(l, n) for l, n in refs if not (m := _meta(n)) or not (foo or m - {"bar"})]
 
 
 def _code_names(repo: Path):
