@@ -373,9 +373,18 @@ def test_paths_in_fenced_examples_are_not_checked(tmp_path):
     assert findings == [] and stats["paths"] == 0
 
 
-def test_extract_paths_expands_braces_and_normalises_root_slash():
+def test_extract_paths_expands_braces_and_keeps_root_slash():
     text = "`/src/{a,b}.py` and `docs/*.md` and `x/<n>.md`\n## Change Log\n`src/old.py`\n"
-    assert extract_paths(text) == [(1, "src/a.py"), (1, "src/b.py")]
+    assert extract_paths(text) == [(1, "/src/a.py"), (1, "/src/b.py")]
+
+
+def test_a_leading_slash_path_in_a_nested_file_anchors_at_the_root_only(tmp_path):
+    # BUG-ADDA-043, as in DataDog's test/fakeintake/AGENTS.md: a route table beside an `api/` folder.
+    _repo(tmp_path, {"test/fakeintake/api/api.go": "package api\n", "pkg/real.go": "package pkg\n"},
+          {"test/fakeintake/AGENTS.md":
+           "Routes: `/api/v1/series`, `/api/v2/logs`. Code: `/pkg/real.go`, `/pkg/gone.go`.\n"})
+    findings, _, stats = instructions_report(tmp_path)
+    assert _path_issues(findings) == ["pkg/gone.go"] and stats["unresolved"] == 2
 
 
 def test_audit_refs_reports_instruction_files_separately(tmp_path):

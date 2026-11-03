@@ -3,7 +3,7 @@
 
 # `refs` - `src/adda/refs.py`
 
-Last verified: 2026-11-02
+Last verified: 2026-11-03
 
 **Purpose** - The deterministic slice of the gap ancestry cannot see (ADR-0010, ADR-0011). `audit` decides staleness by commit ancestry, so a doc committed alongside its code reads as current even when it names a function deleted in that same commit. `refs` checks that every code name a mapped doc cites still appears somewhere in the source. Opt-in, via `adda audit --refs`.
 
@@ -31,7 +31,7 @@ Findings are `{"item": "file:line", "issue": "ref missing" | "path missing" | "l
 - **A configured file that is absent is reported in `skipped`, never passed.** An absent *conventional* file just means the project does not use that tool; an absent *configured* one is a typo or a rename, and silence would read as "checked, all clean". A file both conventional and configured is read once.
 - **A path into `.git/` is `unresolved`, never missing (ADR-0022).** Git's directory is local machine state - an installed hook - not part of the tree.
 - **A path is checked only when its first segment exists in this repo.** Anything else - another repository, a bare filename relative to elsewhere, a slash command - is counted as `unresolved` and printed, never flagged.
-- **Paths:** brace lists expand and each member is checked; a leading `/` means the repo root; the path character set excludes globs and `<placeholders>`; gitignored paths are excused, since a generated file exists on one machine and not on a clean checkout; existence is matched with **exact case**, so a case-insensitive disk and a case-sensitive CI runner give the same answer.
+- **Paths:** brace lists expand and each member is checked; a leading `/` means the repo root, in a nested file too, never the file's own folder (BUG-ADDA-043); the path character set excludes globs and `<placeholders>`; gitignored paths are excused, since a generated file exists on one machine and not on a clean checkout; existence is matched with **exact case**, so a case-insensitive disk and a case-sensitive CI runner give the same answer.
 - **Which files are instructions is data from each tool's docs (ADR-0014).** Claude Code Review's `REVIEW.md` is read in any directory too (ADR-0026, checked 2026-10-27). `_ANY_DIR` lists what tools read in any directory, `_ROOT_ONLY` what they read at the root; both were verified against official docs on 2026-09-24. Names match with **exact case**, dependency and cache folders are skipped, and **gitignored instruction files are left out** - a personal file on one machine must not change the result on CI. A nested file's paths may anchor at the root or its own directory; missing means it anchors in one and exists in neither.
 - **A cited conventional instruction filename or rules-file pattern that is absent is `unresolved`, not missing.** Docs about AI tooling list those names generically. Found by dogfooding - ADDA's own README tripped the rule on its first run, because `.github/` exists for workflows while the Copilot file does not.
 - **Markdown links are checked exactly (ADR-0020).** Inline links, images and reference definitions in instruction files resolve from the file's own folder (a leading `/` is the repo root), so a dead link inside the repo is always `link missing` - no first-segment guess. URLs, schemes and `#anchors` are skipped; `#fragment`/`?query` cut; percent-encoding and `<...>` undone; a link leaving the repo is unresolved. HTML `<a href>` is not read.
@@ -42,6 +42,7 @@ Findings are `{"item": "file:line", "issue": "ref missing" | "path missing" | "l
 
 ## Change Log (newest first)
 
+- [2026-11-03] BUG-ADDA-043 — `extract_paths` keeps a leading `/`, and `instructions_report` anchors such a path at the root only · round 4: DataDog's `test/fakeintake/AGENTS.md` route table (`/api/v1/series`) sits beside `test/fakeintake/api/`, so 28 routes were checked from the file's folder and flagged; ADR-0012 already said a leading `/` is the repo root.
 - [2026-11-02] BUG-ADDA-042 — `_expand_braces` returns nothing for a comma-less `{placeholder}`; `_module_forms`, `_submodules`; nested files anchor at every ancestor folder · round 3 (28 repos): 77 false path findings came from placeholders, import-style paths, sub-project roots and submodules (ADR-0029).
 - [2026-11-02] BUG-ADDA-041 — `_CORPUS_SKIP` is dependency, environment and cache trees only (`docs`, `build`, dot-folders now read; `_CORPUS_DOT_DIRS` gone); file stems are names · round 3: 31 false `ref missing` were names defined in those folders or named by a file (ADR-0029).
 - [2026-11-02] BUG-ADDA-040 — `_code_names` reads files on a 32-thread pool (`_read_code`) · profiling deno showed 129 of 140 s in `io.open`, ~9-20 ms per file under Windows on-access scanning; TypeScript took 18 minutes for 2 instruction files.

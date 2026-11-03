@@ -362,8 +362,8 @@ def extract_paths(text: str) -> list[tuple[int, str]]:
     """(line number, repo-relative path) for every path cited on a live line.
 
     Globs and `<placeholders>` are patterns, not paths. A leading `/` means the
-    repo root, not the filesystem root. Brace lists are expanded so each member
-    is checked on its own.
+    repo root, not the filesystem root, and is kept so the caller anchors it
+    there only. Brace lists are expanded so each member is checked on its own.
     """
     out = []
     for number, line in _live_lines(text):
@@ -373,7 +373,8 @@ def extract_paths(text: str) -> list[tuple[int, str]]:
                 continue
             if "/" not in span and not _EXTENSION.search(span):
                 continue
-            out.extend((number, p) for p in _expand_braces(span.lstrip("/")) if p)
+            root = "/" if span.startswith("/") else ""
+            out.extend((number, root + p) for p in _expand_braces(span.lstrip("/")) if p)
     return out
 
 
@@ -524,25 +525,29 @@ def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:
                         "severity": "medium", "ref": name,
                     })
         for line, path in extract_paths(text):
+            # BUG-ADDA-043: `/api/v1/series` beside `test/fakeintake/api/` is a route.
+            # A leading `/` is the repo root (ADR-0012), never the file's own folder.
+            here, up = ([""], [""]) if path.startswith("/") else (bases, roots)
+            path = path.lstrip("/")
             # Docs about AI tooling list the conventional instruction files by
             # name, generically. Citing one is not a claim that it exists here -
             # found when ADDA's own README tripped this rule on its first run.
             first = path.split("/")[0]
             if first == ".git" or _ACTION.match(path) or any(
-                    f"{b}/{path}".lstrip("/").startswith(s) for b in bases for s in submodules):
+                    f"{b}/{path}".lstrip("/").startswith(s) for b in here for s in submodules):
                 # BUG-ADDA-030: git's own directory is local machine state (an
                 # installed hook), never part of the tree. It cannot be decided.
                 # BUG-ADDA-039: `actions/checkout` is a GitHub Action, not a path.
                 # BUG-ADDA-042: a submodule's files are another repository's.
                 stats["unresolved"] += 1
                 continue
-            anchored = [f"{b}/{path}" if b else path for b in bases
+            anchored = [f"{b}/{path}" if b else path for b in here
                         if _exists_exact(repo, f"{b}/{first}" if b else first)]
             if not anchored or (_generic(path) and not _exists_exact(repo, path)):
                 stats["unresolved"] += 1
                 continue
             stats["paths"] += 1
-            found = [f"{r}/{path}" if r else path for r in roots]
+            found = [f"{r}/{path}" if r else path for r in up]
             if not any(_exists_exact(repo, q) or _ignored(repo, q)
                        for p in found for q in _module_forms(p)):
                 findings.append({
