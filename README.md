@@ -262,6 +262,9 @@ gate run automatically, not only when someone remembers to type `adda audit`.
 
 ## Numbers
 
+How often agent instruction files cite code that no longer exists, and how often ADDA is
+wrong about it, on 83 public repositories: [`benchmarks/case-study-2026-11.md`](benchmarks/case-study-2026-11.md).
+
 Measured 2026-08-26 by `benchmarks/run.py` against real repositories ADDA did not
 design. The harness vendors nothing and takes repo paths as arguments, so clone
 the five at the commits in the table first. Any layout works; the command below
