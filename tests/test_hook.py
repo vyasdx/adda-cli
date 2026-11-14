@@ -113,7 +113,7 @@ def test_install_writes_stub_that_execs_hook_run(tmp_path):
     res = runner.invoke(app, ["hook", "install", str(tmp_path)])
     assert res.exit_code == 0
     body = (hooks / "pre-commit").read_text(encoding="utf-8")
-    assert "-m adda.cli hook run" in body
+    assert "from adda.cli import app; app()' hook run" in body
     assert body.startswith("#!/bin/sh")
 
 
@@ -128,7 +128,7 @@ def test_install_bakes_the_current_interpreter_into_the_hook(tmp_path):
     assert res.exit_code == 0
     body = (hooks / "pre-commit").read_text(encoding="utf-8")
     assert sys.executable.replace("\\", "/") in body
-    assert "-m adda.cli hook run" in body
+    assert "-m adda.cli" not in body  # BUG-ADDA-045: -m imports the repo root
     assert "adda hook run" not in body  # the PATH-dependent form must be gone
 
 
@@ -154,7 +154,7 @@ def test_install_force_overwrites(tmp_path):
     (hooks / "pre-commit").write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
     res = runner.invoke(app, ["hook", "install", str(tmp_path), "--force"])
     assert res.exit_code == 0
-    assert "-m adda.cli hook run" in (hooks / "pre-commit").read_text(encoding="utf-8")
+    assert "' hook run" in (hooks / "pre-commit").read_text(encoding="utf-8")
 
 
 def test_install_outside_git_repo_fails_clearly(tmp_path):
@@ -169,7 +169,7 @@ def test_install_writes_where_core_hooks_path_points(tmp_path):
     _git(tmp_path, "config", "core.hooksPath", ".husky")
     res = runner.invoke(app, ["hook", "install", str(tmp_path)])
     assert res.exit_code == 0
-    assert "-m adda.cli hook run" in (tmp_path / ".husky" / "pre-commit").read_text(encoding="utf-8")
+    assert "' hook run" in (tmp_path / ".husky" / "pre-commit").read_text(encoding="utf-8")
     assert not (tmp_path / ".git" / "hooks" / "pre-commit").exists()
     assert "core.hooksPath" in res.stdout
 
@@ -218,7 +218,7 @@ def test_force_installs_into_a_deliberately_shared_hooks_folder(tmp_path):
     _git(repo, "config", "core.hooksPath", str(shared))
     res = runner.invoke(app, ["hook", "install", str(repo), "--force"])
     assert res.exit_code == 0
-    assert "-m adda.cli hook run" in (shared / "pre-commit").read_text(encoding="utf-8")
+    assert "' hook run" in (shared / "pre-commit").read_text(encoding="utf-8")
 
 
 def test_an_absolute_hooks_path_inside_the_repository_still_installs(tmp_path):
@@ -244,3 +244,22 @@ def test_a_linked_worktree_installs_into_its_main_repository_hooks(tmp_path):
     _git(main, "worktree", "add", "-q", str(tmp_path / "wt"))
     res = runner.invoke(app, ["hook", "install", str(tmp_path / "wt")])
     assert res.exit_code == 0, res.stdout
+
+
+def test_hook_launch_keeps_the_repository_off_the_import_path(tmp_path):
+    # BUG-ADDA-045: git runs hooks from the repo root, and `python -m adda.cli`
+    # puts that root first on the import path, so a committed `json.py` ran.
+    import sys
+
+    from adda.safety import LAUNCH
+
+    marker = tmp_path / "ran.txt"
+    (tmp_path / "json.py").write_text(
+        f"open({str(marker)!r}, 'w').write('x')\n", encoding="utf-8")
+    out = subprocess.run([sys.executable, "-c", LAUNCH, "version"], cwd=tmp_path,
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stderr
+    assert not marker.exists()
+    unsafe = subprocess.run([sys.executable, "-m", "adda.cli", "version"], cwd=tmp_path,
+                            capture_output=True, text=True, timeout=60)
+    assert marker.exists(), unsafe.stderr  # the old launch did run it

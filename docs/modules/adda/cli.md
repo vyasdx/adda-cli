@@ -3,7 +3,7 @@
 
 # `cli` - `src/adda/cli.py`
 
-Last verified: 2026-11-02
+Last verified: 2026-11-14
 
 **Purpose** - ADDA's only entrypoint - the Typer app that wires the fifteen commands to the library modules.
 
@@ -39,6 +39,8 @@ Last verified: 2026-11-02
 
 ## Change Log (newest first)
 
+- [2026-11-14] BUG-ADDA-046 — every output write (`export`, `rehydrate --out`, `checkpoint`, `sync --out`, `hook install`) goes through `safety.write_text`, and `init --force` checks each scaffold target first · `Path.write_text` follows symlinks, so a tracked `okf.json -> ../../.bashrc` would be overwritten on Linux or macOS.
+- [2026-11-14] BUG-ADDA-045 — `hook install`'s one-line form for an existing hook uses `safety.LAUNCH` instead of `-m adda.cli` · `-m` imports a .py file committed at the repository root.
 - [2026-11-02] ENH-ADDA-049 — `monitor --file` help now says when the file's text goes to Anthropic's token counter (claude-* model, `anthropic` extra, API key) · the only outbound flow was documented in the module doc alone (ADR-0027).
 - [2026-10-16] BUG-ADDA-034 — `hook install` stops with exit 1 when the hooks folder is outside the repository, naming it; `--force` covers a deliberately shared folder.
 - [2026-10-12] ENH-ADDA-046 — `sync --from` merges the imported map's exemptions into `exempt` and prints how many; `import_map` no longer takes `include` · any fleet map shape imports (ADR-0025).

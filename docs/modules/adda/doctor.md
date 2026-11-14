@@ -3,7 +3,7 @@
 
 # `doctor` - `src/adda/doctor.py`
 
-Last verified: 2026-10-16
+Last verified: 2026-11-14
 
 **Purpose** - Prove the commit gate is on instead of assuming it (ADR-0015). The hook fails open by design and is never cloned, so an absent or broken gate looks exactly like a working one. `adda doctor` checks each way the gate can be installed and still enforce nothing, and exits 1 if any fails.
 
@@ -25,6 +25,7 @@ Checks, in order: `git repository` · `pre-commit hook` · `runs the ADDA gate` 
 
 ## Change Log (newest first)
 
+- [2026-11-14] BUG-ADDA-045 — new `safe launch` check fails a hook that starts ADDA with `-m`; the gate and interpreter patterns accept the `-c` form; the import check uses `safety.IMPORT_CHECK` · `-m` and plain `-c` put the repository root on the import path.
 - [2026-10-16] BUG-ADDA-034 — new `hooks folder` check: fails when git reads hooks from outside the repository, naming the folder · a gate there belongs to another checkout or to every repo sharing the folder.
 - [2026-09-24] BUG-ADDA-027 - `hooks_dir` moved to `hook.py` so `hook install` and `doctor` share one answer to "where does git read hooks?" · two copies of that rule is how they would drift apart.
 - [2026-09-24] ENH-ADDA-030 - module created · the gate's fail-open design and the fact that hooks are never cloned meant a fresh clone, a deleted venv or a `core.hooksPath` repo all looked enforced while enforcing nothing. Found while designing it: BUG-ADDA-027, `hook install` ignoring `core.hooksPath`, which this module detects.

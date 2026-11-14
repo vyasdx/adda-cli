@@ -37,4 +37,5 @@ rehydrate → audit/enforce.
 - hook: pre-commit doc gate (active) [src/adda/hook.py]
 - doctor: proves the commit gate is on - hook where git looks, runnable interpreter, a map that maps something (active) [src/adda/doctor.py]
 - memory: agent-memory audit - every note indexed once, links resolve, no fact recorded twice (active) [src/adda/memory.py]
+- safety: the trust boundary - the repository read is untrusted input: launch without its root on the import path, no write through its symlinks, its git config neutralised, map paths kept inside it (ADR-0030) (active) [src/adda/safety.py]
 - restated: after a correction, other files still stating the removed text word for word; advisory (active) [src/adda/restated.py]

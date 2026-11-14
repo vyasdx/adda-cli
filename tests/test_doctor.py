@@ -163,3 +163,17 @@ def test_doctor_hooks_folder_check_passes_inside_the_repository(tmp_path):
     _repo(tmp_path)
     _install(tmp_path)
     assert _state(diagnose(tmp_path), "hooks folder") == "ok"
+
+
+def test_hook_that_launches_with_dash_m_fails(tmp_path):
+    # BUG-ADDA-045: a hook installed before 0.5.8 starts ADDA with `-m`, which
+    # imports a .py file committed at the repository root.
+    _repo(tmp_path)
+    hook = tmp_path / ".git" / "hooks" / "pre-commit"
+    hook.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m adda.cli hook run\n',
+                    encoding="utf-8", newline="\n")
+    checks = diagnose(tmp_path)
+    assert _state(checks, "runs the ADDA gate") == "ok"
+    assert _state(checks, "safe launch") == "fail"
+    assert runner.invoke(app, ["hook", "install", str(tmp_path), "--force"]).exit_code == 0
+    assert _state(diagnose(tmp_path), "safe launch") == "ok"

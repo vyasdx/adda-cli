@@ -20,11 +20,17 @@ from pathlib import Path
 
 from adda.hook import hooks_dir, hooks_outside_repo
 from adda.modulemap import MAP_FILENAME
+from adda.safety import IMPORT_CHECK
 
 _GATE = "adda.cli hook run"
+# The stub runs it as `-m adda.cli hook run`, or as `-c '... from adda.cli import app; app()' hook run`.
+_RUNS_GATE = re.compile(r"adda\.cli.*hook\s+run")
 # `ADDA_PY="..."` in the installed stub, or the one-line form `hook install`
-# prints for a repo that already has a hook: exec "<python>" -m adda.cli hook run
-_INTERPRETER = re.compile(r'ADDA_PY="([^"]+)"|"([^"]+)"\s+-m\s+adda\.cli\s+hook\s+run')
+# prints for a repo that already has a hook: exec "<python>" -c '...' hook run
+# (or the older `-m adda.cli hook run`, which _UNSAFE_LAUNCH then fails).
+_INTERPRETER = re.compile(r"""ADDA_PY="([^"]+)"|"([^"]+)"\s+-(?:m\s+adda\.cli|c\s+'[^']*adda\.cli[^']*')\s+hook\s+run""")
+# BUG-ADDA-045: `-m` puts the repository root on the import path.
+_UNSAFE_LAUNCH = re.compile(r"-m\s+adda\.cli\s+hook\s+run")
 
 
 def _check(name, state, detail):
@@ -44,12 +50,20 @@ def _hook_checks(repo: Path, hooks: Path) -> list:
     out = [_check("pre-commit hook", "ok", shown)]
 
     body = hook.read_text(encoding="utf-8", errors="replace")
-    if _GATE not in body:
+    if not _RUNS_GATE.search(body):
         return out + [_check(
             "runs the ADDA gate", "fail",
             f"{shown} exists but never runs `{_GATE}`; add the line `adda hook install` prints",
         )]
     out.append(_check("runs the ADDA gate", "ok", _GATE))
+    if _UNSAFE_LAUNCH.search(body):
+        out.append(_check(
+            "safe launch", "fail",
+            "the hook starts ADDA with `-m`, which runs a .py file committed at the repo root; "
+            "re-run `adda hook install --force`",
+        ))
+    else:
+        out.append(_check("safe launch", "ok", "the repository root is kept off the import path"))
 
     if os.name == "nt":
         out.append(_check("executable", "n/a", "Windows: git runs the hook via its shebang"))
@@ -69,7 +83,7 @@ def _hook_checks(repo: Path, hooks: Path) -> list:
         )]
     out.append(_check("interpreter", "ok", python))
     try:
-        ran = subprocess.run([python, "-c", "import adda.cli"], capture_output=True, timeout=60)
+        ran = subprocess.run([python, "-c", IMPORT_CHECK], capture_output=True, timeout=60)
         ok = ran.returncode == 0
     except (OSError, subprocess.SubprocessError):
         ok = False

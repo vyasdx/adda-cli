@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 
 from adda.modulemap import is_exempt, load_map
+from adda.safety import LAUNCH
 
 HOOK_STUB = """#!/bin/sh
 # Installed by `adda hook install` - blocks a commit that changes code without
@@ -22,13 +23,15 @@ HOOK_STUB = """#!/bin/sh
 #
 # The interpreter path is baked in at install time on purpose: `adda` is
 # normally installed in a venv that is not active when git runs hooks, and a
-# bare `adda` can even resolve to ADDA's own adda/ memory DIRECTORY.
+# bare `adda` can even resolve to ADDA's own adda/ memory DIRECTORY. The code
+# after -c drops the repository root from the import path first: `-m` would
+# import a `json.py` committed at the root (BUG-ADDA-045).
 ADDA_PY="{python}"
 if [ ! -e "$ADDA_PY" ]; then
   echo "[adda] interpreter $ADDA_PY is gone - doc gate skipped." >&2
   exit 0
 fi
-exec "$ADDA_PY" -m adda.cli hook run
+exec "$ADDA_PY" -c '{launch}' hook run
 """
 
 
@@ -80,7 +83,7 @@ def hook_body(python: str) -> str:
     Fails OPEN when the interpreter has vanished (venv deleted or moved): a
     hook that cannot run must not brick every future commit in the repo.
     """
-    return HOOK_STUB.format(python=python.replace("\\", "/"))
+    return HOOK_STUB.format(python=python.replace("\\", "/"), launch=LAUNCH)
 
 
 def staged_paths(repo: Path) -> list:

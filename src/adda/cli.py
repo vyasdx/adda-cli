@@ -22,6 +22,8 @@ from adda.okf import compile_okf
 from adda.modulemap import load_instructions
 from adda.refs import instructions_report, refs_report
 from adda.rehydrate import minimal_okf
+from adda.safety import LAUNCH, UnsafeWrite, check_target
+from adda.safety import write_text as _safe_write
 from adda.sentinel import ContextSentinel, count_tokens, limit_for
 from adda.sync import skeleton_markdown
 
@@ -60,6 +62,15 @@ app = typer.Typer(
 
 # Seed scaffold shipped with the package (see src/adda/templates/adda/).
 TEMPLATES = Path(__file__).parent / "templates" / "adda"
+
+
+def _write(target: Path, text: str, root: Path, newline: str = None) -> None:
+    """Write output without following a link the repository planted (BUG-ADDA-046)."""
+    try:
+        _safe_write(target, text, root=root, newline=newline)
+    except UnsafeWrite as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
 
 
 def _resolve_adda_dir(path: Path) -> Path:
@@ -122,6 +133,13 @@ def init(
         # taking MODULE_MAP.json and STATE/checkpoints with it - and with no
         # map the commit gate silently stops blocking anything, so a routine
         # re-scaffold disarmed enforcement with no signal at all.
+        # BUG-ADDA-046: copytree writes through a symlinked file or folder.
+        for src in TEMPLATES.rglob("*"):
+            try:
+                check_target(dest / src.relative_to(TEMPLATES), root=path)
+            except UnsafeWrite as exc:
+                typer.secho(str(exc), fg=typer.colors.RED)
+                raise typer.Exit(1)
         kept = [
             f for f in sorted(dest.rglob("*"))
             if f.is_file() and not (TEMPLATES / f.relative_to(dest)).exists()
@@ -161,7 +179,7 @@ def export(
     text = _maybe_compress(
         json.dumps(okf_obj.model_dump(), indent=2, ensure_ascii=False), compress
     )
-    target.write_text(text + "\n", encoding="utf-8")
+    _write(target, text + "\n", root=adda_dir.parent)
     typer.secho(
         f"Wrote OKF -> {target}  "
         f"({len(okf_obj.architecture.modules)} modules, "
@@ -237,7 +255,7 @@ def rehydrate(
     text = _maybe_compress(json.dumps(data, indent=2, ensure_ascii=False), compress)
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(text + "\n", encoding="utf-8")
+        _write(out, text + "\n", root=adda_dir.parent)
         typer.secho(f"Wrote minimal OKF -> {out}", fg=typer.colors.GREEN)
     else:
         typer.echo(text)
@@ -267,7 +285,7 @@ def checkpoint(
     header = f"# Checkpoint {stamp}\n"
     if message:
         header += f"\nmessage: {message}\n"
-    dest.write_text(header + "\n" + current.read_text(encoding="utf-8"), encoding="utf-8")
+    _write(dest, header + "\n" + current.read_text(encoding="utf-8"), root=adda_dir.parent)
     typer.secho(f"Checkpoint saved -> {dest}", fg=typer.colors.GREEN)
 
 
@@ -330,7 +348,7 @@ def sync(
     label = "MODULE_MAP" if map_ else "skeleton"
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(text + "\n", encoding="utf-8")
+        _write(out, text + "\n", root=repo)
         typer.secho(f"Wrote {label} -> {out}", fg=typer.colors.GREEN)
         if from_ is not None:
             typer.echo(f"Imported {len(imported)} entr(ies) from {from_}.")
@@ -629,10 +647,10 @@ def hook_install(
     target = hooks / "pre-commit"
     if target.exists() and not force:
         typer.secho(f"{target} already exists. Re-run with --force, or add this line yourself:", fg=typer.colors.RED)
-        typer.echo(f'  exec "{sys.executable}" -m adda.cli hook run')
+        typer.echo(f"""  exec "{sys.executable}" -c '{LAUNCH}' hook run""")
         raise typer.Exit(1)
     body = hook_body(sys.executable)
-    target.write_text(body, encoding="utf-8", newline="\n")
+    _write(target, body, root=path, newline="\n")
     # chmod is a no-op on Windows (git's bundled sh runs the hook via its
     # shebang, not the execute bit) but is required on POSIX.
     target.chmod(0o755)
@@ -647,5 +665,5 @@ def hook_install(
     typer.echo("Prove it is on: `adda doctor`.")
 
 
-if __name__ == "__main__":  # `python -m adda.cli` - used by the installed git hook
+if __name__ == "__main__":  # `python -m adda.cli`; the git hook uses safety.LAUNCH instead
     app()
