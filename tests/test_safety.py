@@ -140,7 +140,11 @@ def test_map_entries_outside_the_repository_are_dropped(tmp_path):
     entries = {"src/a.py": "docs/a.md", "src/b.py": "../secret.md", "src/c.py": secret.as_posix()}
     (repo / "adda" / "MODULE_MAP.json").write_text(json.dumps({"map": entries}), encoding="utf-8")
     mapping, _ = load_map(repo / "adda")
-    assert mapping == {"src/a.py": "docs/a.md"}
+    # `../` is dropped; an absolute path is dropped on Windows, and on POSIX
+    # its leading `/` is already stripped, which re-roots it inside the repo.
+    from adda.safety import inside
+    assert mapping["src/a.py"] == "docs/a.md" and "src/b.py" not in mapping
+    assert all(inside(repo, doc) for doc in mapping.values())
     assert "sk_live_planted_value" not in json.dumps(refs_report(repo, repo / "adda"), default=str)
 
 
