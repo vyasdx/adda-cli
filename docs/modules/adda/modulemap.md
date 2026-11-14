@@ -3,7 +3,7 @@
 
 # `modulemap` - `src/adda/modulemap.py`
 
-Last verified: 2026-09-24
+Last verified: 2026-11-14
 
 **Purpose** - `MODULE_MAP.json` load/query - the code->doc routing table `adda audit` walks. Maps each source file to the doc that must change with it.
 
@@ -24,6 +24,7 @@ Last verified: 2026-09-24
 
 ## Change Log (newest first)
 
+- [2026-11-14] BUG-ADDA-048 — `load_map` drops entries whose code or doc path resolves outside the repository (`safety.inside`) · a `../x` or absolute doc path made `audit --refs` read a file outside the repo and print the names it cites; `audit` revealed whether any path existed.
 - [2026-09-24] ENH-ADDA-028 - added `load_instructions`; `load_include` now shares `_load_list` with it · a project's own instruction files (e.g. `intent.md`) are named under `instructions` in the map. Safe to put there only because `sync --map` now carries over every key it does not generate.
 - [2026-08-26] DEC-ADDA-009 / BUG-ADDA-020 - added `load_include` · one `__init__.py` anywhere dropped every other Python root repo-wide, and the user had no way to say otherwise. `include` in `MODULE_MAP.json` overrules discovery per root and round-trips through `sync --map`, so regenerating cannot quietly undo it.
 - [2026-08-18] ENH-ADDA-007 — module created · v0.3 enforcement layer: the doc-drift check `adda diff` structurally cannot perform.

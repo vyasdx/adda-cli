@@ -15,7 +15,7 @@ import subprocess
 from pathlib import Path
 
 from adda.modulemap import is_exempt, load_map
-from adda.safety import LAUNCH
+from adda.safety import GIT, LAUNCH
 
 HOOK_STUB = """#!/bin/sh
 # Installed by `adda hook install` - blocks a commit that changes code without
@@ -43,7 +43,7 @@ def hooks_dir(repo: Path):
     """
     try:
         out = subprocess.run(
-            ["git", "rev-parse", "--git-path", "hooks"],
+            [*GIT, "rev-parse", "--git-path", "hooks"],
             cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=10,
         )
     except (OSError, subprocess.SubprocessError):
@@ -65,7 +65,7 @@ def hooks_outside_repo(repo: Path, hooks: Path) -> bool:
     """
     try:
         out = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel", "--absolute-git-dir", "--git-common-dir"],
+            [*GIT, "rev-parse", "--show-toplevel", "--absolute-git-dir", "--git-common-dir"],
             cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=10,
         )
     except (OSError, subprocess.SubprocessError):
@@ -102,7 +102,7 @@ def staged_paths(repo: Path) -> list:
     """
     try:
         out = subprocess.run(
-            ["git", "diff", "--cached", "--name-only", "-z"],
+            [*GIT, "diff", "--cached", "--name-only", "-z"],
             cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=10,
         )
     except (OSError, subprocess.SubprocessError, UnicodeDecodeError):

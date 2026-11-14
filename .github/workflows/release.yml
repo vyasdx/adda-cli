@@ -9,19 +9,25 @@
 #
 # Runs in the PUBLIC mirror, never in the working repo. A PyPI version number
 # can never be reused, so every gate below fails closed.
+#
+# BUG-ADDA-049: anyone who can push a `v*` tag to the mirror could publish.
+# So build and publish are separate jobs and only publish holds the OIDC
+# token; publish runs in the `pypi` environment, where a required reviewer
+# (set in the mirror's settings) must approve; every action is pinned to a
+# commit SHA, because a moved tag is how a third-party action gets swapped;
+# and only a tag push starts it, so the tag/version check can never be skipped.
 
 name: Release to PyPI
 
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  publish:
+  build:
     # This file is the SOURCE in the working repo and only executable in the
     # mirror. Without this, tagging a release in the working repo would start a
     # publish that fails at the OIDC handshake - safe, because PyPI trusts only
@@ -29,25 +35,23 @@ jobs:
     # happen. Refusing by name is clearer than being refused by PyPI.
     if: github.repository == 'vyasdx/adda-cli'
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write     # the OIDC token that replaces an API token
-      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false  # zizmor artipacked: no later step needs the token
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.13"
 
       - name: Build
         run: |
-          pip install build==1.4.2 twine
+          pip install build==1.4.2 twine==7.0.0
           python -m build --sdist --wheel --outdir dist .
 
       # A tag that disagrees with the packaged version publishes the wrong
       # thing under the right name, and the wrong thing cannot be withdrawn.
       - name: Tag must match the packaged version
-        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           python - <<'PY'
           import os, sys, tomllib
@@ -94,5 +98,24 @@ jobs:
       - name: Metadata check
         run: python -m twine check dist/*
 
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.repository == 'vyasdx/adda-cli'
+    runs-on: ubuntu-latest
+    environment: pypi     # add a required reviewer to this environment in the mirror's settings
+    permissions:
+      id-token: write     # the OIDC token that replaces an API token
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        with:
+          name: dist
+          path: dist/
+
       - name: Publish
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3

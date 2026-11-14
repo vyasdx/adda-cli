@@ -3,7 +3,7 @@
 
 # `audit` - `src/adda/audit.py`
 
-Last verified: 2026-08-26
+Last verified: 2026-11-14
 
 **Purpose** - Doc-layer drift detection - the check `adda diff` structurally cannot perform. `diff` only confirms documented module *paths* still exist; it never opens a doc or checks whether it is current. `audit` uses `MODULE_MAP.json` as the code->doc routing table and catches drift `diff` is blind to: missing docs, stale docs, unmapped source, orphaned docs, and stale map entries.
 
@@ -27,6 +27,7 @@ Findings are `{"item": str, "issue": str, "severity": str}`. Five issues: `doc m
 
 ## Change Log (newest first)
 
+- [2026-11-14] BUG-ADDA-047 — git calls start with `safety.GIT` (`-c core.fsmonitor=false -c safe.bareRepository=explicit`) · a repository's own git config can name a program for git to run; a clone never carries config, an archive with a git directory does. Test: a planted `core.fsmonitor` runs under plain `git diff --cached` and not under ADDA's calls.
 - [2026-08-26] DEC-ADDA-009 - `audit` now prints every source root discovery chose to skip, under `[skipped]` · `audit` can only report drift in code `sync` mapped, so an unreached root was being reported as clean rather than as unexamined. Not a finding (nothing is drifting), never silence.
 - [2026-08-26] RF-ADDA-005 - corrected an invariant that still named `_source_files`, deleted earlier the same day - the file contradicted its own Change Log two sections below. Caught by review, not by `audit`: both docs were committed alongside the code, so git ancestry called them current. Ancestry sees an untouched doc, never a wrongly-updated one (DEC-ADDA-010).
 - [2026-08-26] BUG-ADDA-013 — `_source_files` deleted; discovery now imported from `sync` · it globbed `*.py` while the map covered ts/js, so a TypeScript file added after the map was written was invisible to the unmapped-code rule and escaped enforcement entirely.

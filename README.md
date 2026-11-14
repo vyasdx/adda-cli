@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="version 0.5.7" src="https://img.shields.io/badge/version-0.5.7-1d9e75">
   <img alt="python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-185fa5">
-  <img alt="tests 277 passing" src="https://img.shields.io/badge/tests-277%20passing-3b6d11">
+  <img alt="tests 280 passing" src="https://img.shields.io/badge/tests-280%20passing-3b6d11">
   <img alt="OKF v0.2" src="https://img.shields.io/badge/OKF-v0.2-534ab7">
   <img alt="provider-agnostic" src="https://img.shields.io/badge/LLM-provider--agnostic-0f6e56">
 </p>
@@ -213,7 +213,7 @@ Installs the `adda` console script.
 
 Nothing, by default. Every command reads your repository and its git history locally and writes only inside it. ADDA sends no telemetry and makes no model calls.
 
-One opt-in exception: `adda monitor --file F --model claude-...` sends the text of `F` to Anthropic's token-counting endpoint (`messages.count_tokens`), but only when the optional `anthropic` extra is installed (`pip install "adda[anthropic]"`) and `ANTHROPIC_API_KEY` is set. It counts tokens and generates nothing, and the request goes out under your own Anthropic account. If any of the three is missing, `monitor` estimates locally (characters / 4) and its output says `via heuristic`. To use a Claude model's window and stay local, pass the window instead of the model: `adda monitor --file F --limit 1000000`.
+One opt-in exception: `adda monitor --file F --model claude-...` sends the text of `F` to Anthropic's token-counting endpoint (`messages.count_tokens`), or to wherever `ANTHROPIC_BASE_URL` points if you set it, but only when the optional `anthropic` extra is installed (`pip install "adda[anthropic]"`) and `ANTHROPIC_API_KEY` is set. It counts tokens and generates nothing, and the request goes out under your own Anthropic account. If any of the three is missing, `monitor` estimates locally (characters / 4) and its output says `via heuristic`. To use a Claude model's window and stay local, pass the window instead of the model: `adda monitor --file F --limit 1000000`.
 
 **Regulation** (our reading, not legal advice). ADDA's publisher collects and stores no personal data, so it processes none under India's Digital Personal Data Protection Act 2023. If you send a file that contains personal data through the token count above, that transfer is yours, to Anthropic under your account. ADDA is not an AI system under the EU AI Act: it runs fixed, human-written rules and infers nothing from data.
 

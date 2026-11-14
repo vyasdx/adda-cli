@@ -23,6 +23,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from adda.safety import GIT
+
 K = 6  # words per phrase: 5 matched code idioms, 8 missed real restatements
 _TOKEN = re.compile(r"[a-z0-9]+(?:['._/-][a-z0-9]+)*")
 _HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
@@ -39,7 +41,7 @@ _SUPERSEDED = re.compile(r"\bsuperseded\b", re.I)
 
 def _git(repo: Path, *args, data=None) -> bytes:
     return subprocess.run(
-        ["git", *args], cwd=repo, input=data, capture_output=True, check=True, timeout=60,
+        [*GIT, *args], cwd=repo, input=data, capture_output=True, check=True, timeout=60,
     ).stdout
 
 
@@ -98,7 +100,7 @@ def _phrases(tokens):
 
 def _changes(repo: Path, rev: str) -> dict:
     """{old path: {old, new, new_path, removed:{lines}, added:{lines}}} for rev^..rev."""
-    raw = _git(repo, "diff", "--no-color", "-M", "--unified=0", "--raw", "-p", "--abbrev=40",
+    raw = _git(repo, "diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--unified=0", "--raw", "-p", "--abbrev=40",
                f"{rev}^", rev).decode("utf-8", "replace")
     files, cur, old_n, new_n = {}, None, 0, 0
     for line in raw.splitlines():

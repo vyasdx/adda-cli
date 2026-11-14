@@ -44,7 +44,7 @@ jobs:
         python-version: ["3.10", "3.13"]
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           # REQUIRED, not a preference. `adda audit` decides staleness by git
           # commit ancestry, and on a shallow clone `merge-base --is-ancestor`
@@ -52,8 +52,9 @@ jobs:
           # answer is no. Full history is what makes the staleness rule
           # decidable here. See docs/modules/audit.md.
           fetch-depth: 0
+          persist-credentials: false  # zizmor artipacked: no later step needs the token
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -171,5 +172,9 @@ jobs:
         if: matrix.python-version == '3.13'
         run: |
           V=8.30.1
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz"             | tar -xz -C /tmp gitleaks
+          # BUG-ADDA-050 (L6): checked against the release's published sha256.
+          SHA=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+          curl -sSfL -o /tmp/gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz"
+          echo "${SHA}  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
           /tmp/gitleaks detect --no-git --redact --verbose --exit-code 1

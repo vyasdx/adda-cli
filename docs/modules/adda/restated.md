@@ -3,7 +3,7 @@
 
 # `restated` - `src/adda/restated.py`
 
-Last verified: 2026-09-24
+Last verified: 2026-11-14
 
 **Purpose** - After a commit corrects a fact, list the other files that still state the old version word for word (ADR-0017). Advisory and run on purpose: `adda restated [path] --rev <commit>`.
 
@@ -29,5 +29,6 @@ CLI: `adda restated [path] [--rev REV] [--also DIR]... [--json]` - exit 1 only w
 
 ## Change Log (newest first)
 
+- [2026-11-14] BUG-ADDA-047 — git calls start with `safety.GIT` (`-c core.fsmonitor=false -c safe.bareRepository=explicit`); the patch diff adds `--no-ext-diff --no-textconv` · a repository's own git config can name a program for git to run; a clone never carries config, an archive with a git directory does. Test: a planted `core.fsmonitor` runs under plain `git diff --cached` and not under ADDA's calls.
 - [2026-09-24] ENH-ADDA-031 - the search runs over HEAD, not the tree at `--rev` · dogfooding on an older commit kept reporting a paragraph already fixed after it; "still stated" has to mean now. Test-first.
 - [2026-09-24] ENH-ADDA-031 - module created from a scoped prototype · on this repo's last 40 commits: 23 hits, about half needing an edit and nearly all worth reading; the built version reproduces the prototype's count exactly. It finds the stale MSG-015 reply at 4f0c158 and, with `--also` on agent memory, the ops-dashboard copy at a7dfc94.

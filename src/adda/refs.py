@@ -35,6 +35,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from adda.modulemap import load_map
+from adda.safety import GIT
 from adda.sync import IGNORE_DIRS, PROSE_SUFFIXES, SOURCE_SUFFIXES, git_ignored
 
 # Broader than source discovery, on purpose. Discovery answers "what needs a
@@ -476,7 +477,7 @@ def _ignored(repo: Path, rel: str) -> bool:
     a clean checkout, so it is neither present nor missing - just not ours to check."""
     try:
         out = subprocess.run(
-            ["git", "check-ignore", "-q", rel], cwd=repo, capture_output=True, timeout=10,
+            [*GIT, "check-ignore", "-q", "--", rel], cwd=repo, capture_output=True, timeout=10,
         )
     except (OSError, subprocess.SubprocessError):
         return False

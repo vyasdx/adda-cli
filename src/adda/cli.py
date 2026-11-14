@@ -200,8 +200,8 @@ def monitor(
         "-f",
         help=(
             "Count tokens of this file instead of --tokens. Its text is sent to Anthropic's "
-            "token counter only with a claude-* --model, the anthropic extra and "
-            "ANTHROPIC_API_KEY; otherwise it is estimated locally."
+            "token counter (or wherever ANTHROPIC_BASE_URL points) only with a claude-* "
+            "--model, the anthropic extra and ANTHROPIC_API_KEY; otherwise it is estimated locally."
         ),
     ),
     model: Optional[str] = typer.Option(

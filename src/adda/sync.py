@@ -18,6 +18,7 @@ from pathlib import Path
 from fnmatch import fnmatchcase
 
 from adda.modulemap import is_exempt
+from adda.safety import GIT
 
 # Directories that are never project "modules" (build/tooling/test/doc noise).
 IGNORE_DIRS = {
@@ -163,7 +164,7 @@ def git_ignored(repo: Path, rels: list) -> set:
         return set()
     try:
         out = subprocess.run(
-            ["git", "check-ignore", "--stdin", "-z"], cwd=repo, capture_output=True,
+            [*GIT, "check-ignore", "--stdin", "-z"], cwd=repo, capture_output=True,
             input="\0".join(rels).encode("utf-8"), timeout=30,
         )
     except (OSError, subprocess.SubprocessError):
@@ -180,7 +181,7 @@ def git_ignored(repo: Path, rels: list) -> set:
 def _committed(repo: Path) -> set:
     """Paths in HEAD's tree, relative to `repo`; empty outside git or before a commit."""
     try:
-        out = subprocess.run(["git", "ls-tree", "-r", "-z", "--name-only", "HEAD"],
+        out = subprocess.run([*GIT, "ls-tree", "-r", "-z", "--name-only", "HEAD"],
                              cwd=repo, capture_output=True, timeout=60)
     except (OSError, subprocess.SubprocessError):
         return set()
@@ -368,7 +369,7 @@ def _text_files(repo: Path) -> list:
     """
     try:
         out = subprocess.run(
-            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            [*GIT, "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
             cwd=repo, capture_output=True, timeout=60,
         )
         rels = [r for r in out.stdout.decode("utf-8").split("\0") if r] if out.returncode == 0 else None

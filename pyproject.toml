@@ -2,7 +2,7 @@
 # Coded by - Claude Code
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.33.0"]  # BUG-ADDA-049: the backend runs inside the release job
 build-backend = "hatchling.build"
 
 [project]

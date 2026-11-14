@@ -32,6 +32,7 @@ CLI: `adda hook run [path]` (invoked by the installed hook) · `adda hook instal
 
 ## Change Log (newest first)
 
+- [2026-11-14] BUG-ADDA-047 — git calls start with `safety.GIT` (`-c core.fsmonitor=false -c safe.bareRepository=explicit`) · a repository's own git config can name a program for git to run; a clone never carries config, an archive with a git directory does. Test: a planted `core.fsmonitor` runs under plain `git diff --cached` and not under ADDA's calls.
 - [2026-11-14] BUG-ADDA-045 — the stub starts ADDA with `-c` and `safety.LAUNCH` instead of `-m adda.cli` · git runs hooks from the repository root and `-m` put it first on the import path, so a committed `json.py` ran on the next commit (reproduced).
 - [2026-10-16] BUG-ADDA-034 — `hooks_outside_repo` added; `hook install` refuses a hooks folder outside the repository (worktree or git dirs) unless `--force` · an absolute `core.hooksPath` travels with `.git/config`, so installing in a scratch copy of two fleet repos wrote the gate into the real ones.
 - [2026-09-24] BUG-ADDA-027 - `hooks_dir` (moved here from `doctor`) resolves the hooks directory via `git rev-parse --git-path hooks`, and `hook install` writes there · with `core.hooksPath` set, install wrote to `.git/hooks`, which git never reads: reported installed, enforced nothing. Reproduced with a real commit before the fix and blocked by the same commit after it; a mutation dropping the `mkdir` turns two tests red.

@@ -16,6 +16,8 @@ import json
 from fnmatch import fnmatchcase
 from pathlib import Path
 
+from adda.safety import inside
+
 MAP_FILENAME = "MODULE_MAP.json"
 
 
@@ -34,7 +36,13 @@ def load_map(adda_dir: Path) -> tuple[dict[str, str], list[str]]:
     if not target.is_file():
         raise FileNotFoundError(f"No {MAP_FILENAME} in {adda_dir}. Run `adda sync --map`.")
     data = json.loads(target.read_text(encoding="utf-8"))
-    mapping = {_norm(k): _norm(v) for k, v in (data.get("map") or {}).items()}
+    repo = adda_dir.parent
+    # BUG-ADDA-048: an entry naming `../x` or `C:/...` made ADDA read and print
+    # a file outside the repository. Such an entry is not this repo's to check.
+    mapping = {
+        _norm(k): _norm(v) for k, v in (data.get("map") or {}).items()
+        if inside(repo, _norm(k)) and inside(repo, _norm(v))
+    }
     return mapping, [_norm(g) for g in (data.get("exempt") or [])]
 
 

@@ -93,6 +93,67 @@ def test_export_still_writes_okf_json(tmp_path):
     assert "architecture" in json.loads((tmp_path / "okf.json").read_text(encoding="utf-8"))
 
 
+def _fsmonitor_repo(root):
+    """A repo whose own git config names a program for git to run (core.fsmonitor)."""
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    marker = root / "fsmonitor-ran"
+    script = root / "fsm.sh"
+    script.write_text(f"#!/bin/sh\necho x > '{marker.as_posix()}'\n", encoding="utf-8", newline="\n")
+    script.chmod(0o755)
+    subprocess.run(["git", "config", "core.fsmonitor", script.as_posix()], cwd=root, check=True)
+    (root / "a.py").write_text("x = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "a.py"], cwd=root, check=True,
+                   env={**os.environ, "GIT_CONFIG_PARAMETERS": "'core.fsmonitor'='false'"})
+    return marker
+
+
+def test_git_calls_do_not_run_the_repositorys_fsmonitor(tmp_path):
+    # BUG-ADDA-047: a downloaded archive can carry git config; core.fsmonitor
+    # fires on index refreshes such as `git diff --cached` and `ls-files --others`.
+    from adda.hook import staged_paths
+    from adda.sync import git_ignored, source_files
+
+    marker = _fsmonitor_repo(tmp_path)
+    assert staged_paths(tmp_path) == ["a.py"]
+    source_files(tmp_path)
+    git_ignored(tmp_path, ["a.py"])
+    assert not marker.exists()
+    subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=tmp_path, capture_output=True)
+    if not marker.exists():
+        pytest.skip("this git does not run core.fsmonitor here, so the test proves nothing")
+
+
+def test_map_entries_outside_the_repository_are_dropped(tmp_path):
+    # BUG-ADDA-048: `../x` and absolute paths in MODULE_MAP.json made ADDA read
+    # a file outside the repository and print the names it cites.
+    from adda.modulemap import load_map
+    from adda.refs import refs_report
+
+    secret = tmp_path / "secret.md"
+    secret.write_text("token `sk_live_planted_value`\n", encoding="utf-8")
+    repo = tmp_path / "repo"
+    (repo / "adda").mkdir(parents=True)
+    (repo / "src").mkdir()
+    (repo / "src" / "a.py").write_text("x = 1\n", encoding="utf-8")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "a.md").write_text("cites `x`\n", encoding="utf-8")
+    entries = {"src/a.py": "docs/a.md", "src/b.py": "../secret.md", "src/c.py": secret.as_posix()}
+    (repo / "adda" / "MODULE_MAP.json").write_text(json.dumps({"map": entries}), encoding="utf-8")
+    mapping, _ = load_map(repo / "adda")
+    assert mapping == {"src/a.py": "docs/a.md"}
+    assert "sk_live_planted_value" not in json.dumps(refs_report(repo, repo / "adda"), default=str)
+
+
+def test_a_path_that_looks_like_an_option_is_not_read_as_one(tmp_path):
+    # BUG-ADDA-050 (L1): a doc path reached `git check-ignore` as an option:
+    # `[x](--stdin)` waited 10 s for input, and an ignored `-x.md` read as not ignored.
+    from adda.refs import _ignored
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text("-x.md\n", encoding="utf-8")
+    assert _ignored(tmp_path, "-x.md") is True
+
+
 def test_init_force_refuses_a_scaffold_file_that_is_a_symlink(tmp_path):
     victim = tmp_path / "victim"
     victim.write_text("keep", encoding="utf-8")

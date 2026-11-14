@@ -3,7 +3,7 @@
 
 # `refs` - `src/adda/refs.py`
 
-Last verified: 2026-11-03
+Last verified: 2026-11-14
 
 **Purpose** - The deterministic slice of the gap ancestry cannot see (ADR-0010, ADR-0011). `audit` decides staleness by commit ancestry, so a doc committed alongside its code reads as current even when it names a function deleted in that same commit. `refs` checks that every code name a mapped doc cites still appears somewhere in the source. Opt-in, via `adda audit --refs`.
 
@@ -43,6 +43,8 @@ Findings are `{"item": "file:line", "issue": "ref missing" | "path missing" | "l
 
 ## Change Log (newest first)
 
+- [2026-11-14] BUG-ADDA-050 (L1) — `_ignored` passes `--` before the path · a doc link such as `[x](--stdin)` reached `git check-ignore` as an option (a 10 s wait each), and an ignored file named `-x.md` read as not ignored.
+- [2026-11-14] BUG-ADDA-047 — git calls start with `safety.GIT` (`-c core.fsmonitor=false -c safe.bareRepository=explicit`) · a repository's own git config can name a program for git to run; a clone never carries config, an archive with a git directory does. Test: a planted `core.fsmonitor` runs under plain `git diff --cached` and not under ADDA's calls.
 - [2026-11-03] BUG-ADDA-044 — `extract_refs` drops names built on foo/bar/baz/qux (`_meta`); `bar` only beside a foo · round 4: TrueFoundry's API conventions are written for a resource called Foo, 28 false `ref missing`; no hand-checked real finding in rounds 3-4 has such a word.
 - [2026-11-03] BUG-ADDA-043 — `extract_paths` keeps a leading `/`, and `instructions_report` anchors such a path at the root only · round 4: DataDog's `test/fakeintake/AGENTS.md` route table (`/api/v1/series`) sits beside `test/fakeintake/api/`, so 28 routes were checked from the file's folder and flagged; ADR-0012 already said a leading `/` is the repo root.
 - [2026-11-02] BUG-ADDA-042 — `_expand_braces` returns nothing for a comma-less `{placeholder}`; `_module_forms`, `_submodules`; nested files anchor at every ancestor folder · round 3 (28 repos): 77 false path findings came from placeholders, import-style paths, sub-project roots and submodules (ADR-0029).

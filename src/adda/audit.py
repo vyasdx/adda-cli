@@ -29,6 +29,7 @@ import subprocess
 from pathlib import Path
 
 from adda.modulemap import is_exempt, load_include, load_map
+from adda.safety import GIT
 from adda.sync import source_roots
 
 
@@ -43,7 +44,7 @@ def _git_out(repo: Path, args: list[str]):
     """Run `git *args` in `repo`; return trimmed stdout, or None on any failure."""
     try:
         out = subprocess.run(
-            ["git", *args], cwd=repo, capture_output=True, text=True, timeout=10,
+            [*GIT, *args], cwd=repo, capture_output=True, text=True, timeout=10,
         )
     except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
         return None
@@ -65,7 +66,7 @@ def _git_rc(repo: Path, args: list) -> int:
     """Exit code of a git command; -1 when git could not be run at all."""
     try:
         out = subprocess.run(
-            ["git", *args], cwd=repo, capture_output=True, text=True, timeout=10,
+            [*GIT, *args], cwd=repo, capture_output=True, text=True, timeout=10,
         )
     except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
         return -1

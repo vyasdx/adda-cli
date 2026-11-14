@@ -39,6 +39,7 @@ Last verified: 2026-11-14
 
 ## Change Log (newest first)
 
+- [2026-11-14] BUG-ADDA-050 (L5) — `monitor --file` help says the text goes to Anthropic's token counter or wherever `ANTHROPIC_BASE_URL` points · the SDK honours that variable, so the help named the wrong destination for anyone who sets it.
 - [2026-11-14] BUG-ADDA-046 — every output write (`export`, `rehydrate --out`, `checkpoint`, `sync --out`, `hook install`) goes through `safety.write_text`, and `init --force` checks each scaffold target first · `Path.write_text` follows symlinks, so a tracked `okf.json -> ../../.bashrc` would be overwritten on Linux or macOS.
 - [2026-11-14] BUG-ADDA-045 — `hook install`'s one-line form for an existing hook uses `safety.LAUNCH` instead of `-m adda.cli` · `-m` imports a .py file committed at the repository root.
 - [2026-11-02] ENH-ADDA-049 — `monitor --file` help now says when the file's text goes to Anthropic's token counter (claude-* model, `anthropic` extra, API key) · the only outbound flow was documented in the module doc alone (ADR-0027).
