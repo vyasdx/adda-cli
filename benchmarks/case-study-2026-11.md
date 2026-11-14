@@ -17,8 +17,8 @@ itself is wrong.
   findings were real (24%). The false alarms are listed below by cause, with what we changed.
 - Five fixes went upstream as pull requests. None has been reviewed yet.
 
-The fixes made during this study are on `main` and not yet in a PyPI release. ADDA 0.5.6 from
-PyPI behaves like round 1 below.
+The fixes made during this study shipped in ADDA 0.5.7 (`pip install "adda>=0.5.7"`).
+ADDA 0.5.6 and earlier behave like round 1 below.
 
 ## Method
 
@@ -128,8 +128,8 @@ the code. State as of 9 November 2026: all open, none reviewed yet.
 
 ## Reproduce
 
-Clone a repository at the commit below, install ADDA from `main`, and run `adda audit --refs` in
-the clone. Results on a later commit will differ: that is the point of the check.
+Clone a repository at the commit below, install ADDA 0.5.7 or later, and run `adda audit --refs`
+in the clone. Results on a later commit will differ: that is the point of the check.
 
 | Repository | Commit scanned |
 |---|---|
