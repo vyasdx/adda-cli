@@ -520,7 +520,7 @@ def _ignored(repo: Path, rel: str) -> bool:
     return out.returncode == 0
 
 
-def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:
+def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:  # noqa: C901 - RF-ADDA-016
     """Return (findings, skipped, stats) for the instruction files present.
 
     `extra` names files a project configured itself. Unlike a conventional file,

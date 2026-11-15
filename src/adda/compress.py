@@ -21,7 +21,7 @@ def available() -> bool:
         import headroom  # noqa: F401
 
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001 - a broken optional install must read as absent
         return False
 
 
@@ -33,7 +33,7 @@ def compress_text(text: str, model: Optional[str] = None) -> tuple[str, dict]:
     """
     try:
         from headroom import compress as _compress
-    except Exception:
+    except Exception:  # noqa: BLE001 - a broken optional install must read as absent
         return text, {"applied": False, "reason": "headroom-ai not installed"}
 
     try:
@@ -48,5 +48,5 @@ def compress_text(text: str, model: Optional[str] = None) -> tuple[str, dict]:
             "tokens_saved": getattr(result, "tokens_saved", None),
             "compression_ratio": getattr(result, "compression_ratio", None),
         }
-    except Exception as exc:  # any headroom failure -> safe pass-through
+    except Exception as exc:  # noqa: BLE001 - any headroom failure -> safe pass-through
         return text, {"applied": False, "reason": f"headroom error: {exc}"}

@@ -3,7 +3,7 @@
 
 # `memory` - `src/adda/memory.py`
 
-Last verified: 2026-09-24
+Last verified: 2026-11-15
 
 **Purpose** - Audit an agent's memory directory the way `audit` checks docs (ADR-0016). A memory directory is markdown notes plus an index the agent loads first; a note the index does not list is invisible however correct, and one fact recorded twice drifts into two facts. Deterministic and structural: it never judges whether a note is true.
 
@@ -26,4 +26,5 @@ CLI: `adda memory <dir> [--index NAME] [--json]` - exit 1 on any finding.
 
 ## Change Log (newest first)
 
+- [2026-11-15] ENH-ADDA-063 - `memory_report` carries `noqa: C901 - RF-ADDA-016`; code unchanged · ruff now gates complexity at 15 and this function is at 20 (ADR-0032).
 - [2026-09-24] ENH-ADDA-029 - module created · agent memory drifts like docs: BUG-ADDA-024 orphaned three notes and RF-ADDA-009 found one fact recorded twice, both found by hand. On this project's own memory: 8 files, 8 index entries, 13 links, no drift - the same result RF-ADDA-009 reached by hand, now one command.

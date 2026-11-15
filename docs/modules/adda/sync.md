@@ -3,7 +3,7 @@
 
 # `sync` - `src/adda/sync.py`
 
-Last verified: 2026-11-14
+Last verified: 2026-11-15
 
 **Purpose** - Derive an ADDA architecture *skeleton* from a codebase, so the docs can be refreshed instead of rotting.
 
@@ -29,6 +29,7 @@ Last verified: 2026-11-14
 
 ## Change Log (newest first)
 
+- [2026-11-15] ENH-ADDA-063 - `discover_deps` catches `_UNREADABLE` (ImportError, OSError, ValueError, AttributeError, TypeError) instead of every exception · a bug in it now surfaces instead of reading as "no dependencies" (ADR-0032).
 - [2026-11-14] BUG-ADDA-047 — git calls start with `safety.GIT` (`-c core.fsmonitor=false -c safe.bareRepository=explicit`) · a repository's own git config can name a program for git to run; a clone never carries config, an archive with a git directory does. Test: a planted `core.fsmonitor` runs under plain `git diff --cached` and not under ADDA's calls.
 - [2026-11-02] BUG-ADDA-038 — `git_ignored` never reports a path in HEAD's tree (`_committed`) · `check-ignore` spares a tracked file only if the index lists it; six case-study clones had an empty index after a failed Windows checkout, so committed files matching an ignore pattern read as ignored and `--refs` reported 38 false `missing` on next.js.
 - [2026-10-12] ENH-ADDA-046 — `import_map` reads every fleet map shape (`_map_pairs`), expands folders and wildcards to text files (`_text_files`), skips foreign-root sections, returns exemptions; returns `(entries, notes, exempt)` · four wave-2 products keep hand maps in four schemas that 0.5.3 refused; files at an existing doc 54->96, 43->80, 1->25, 21->76 (ADR-0025). A bracketed Next.js route path read as a wildcard was caught on a real repo and fixed before commit.

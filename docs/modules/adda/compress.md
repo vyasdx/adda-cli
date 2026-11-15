@@ -3,7 +3,7 @@
 
 # `compress` - `src/adda/compress.py`
 
-Last verified: 2026-08-18
+Last verified: 2026-11-15
 
 **Purpose** - Optional headroom-ai wrapper. Best-effort, never load-bearing.
 
@@ -23,4 +23,5 @@ Last verified: 2026-08-18
 
 ## Change Log (newest first)
 
+- [2026-11-15] ENH-ADDA-063 - the three blind excepts carry `noqa: BLE001` with their reason; behaviour unchanged · BLE is now linted, so each deliberate one must say why (ADR-0032).
 - [2026-08-18] ENH-ADDA-006 - module doc created (backfill; code unchanged) · the anti-drift rule requires a doc per code path and `docs/modules/` was empty.

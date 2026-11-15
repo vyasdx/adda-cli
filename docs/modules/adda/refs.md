@@ -44,6 +44,7 @@ Findings are `{"item": "file:line", "issue": "ref missing" | "path missing" | "l
 
 ## Change Log (newest first)
 
+- [2026-11-15] ENH-ADDA-063 - `instructions_report` carries `noqa: C901 - RF-ADDA-016`; code unchanged · ruff now gates complexity at 15 and this function is at 19 (ADR-0032).
 - [2026-11-15] BUG-ADDA-050 (L2) — a doc over 1 MB and any line over 10,000 characters are skipped and listed in `skipped`; a long line is blanked so line numbers hold · span matching is quadratic in line length (48 KB: 5 s), and every repository's README is read (ADR-0031).
 - [2026-11-14] BUG-ADDA-050 (L1) — `_ignored` passes `--` before the path · a doc link such as `[x](--stdin)` reached `git check-ignore` as an option (a 10 s wait each), and an ignored file named `-x.md` read as not ignored.
 - [2026-11-14] BUG-ADDA-047 — git calls start with `safety.GIT` (`-c core.fsmonitor=false -c safe.bareRepository=explicit`) · a repository's own git config can name a program for git to run; a clone never carries config, an archive with a git directory does. Test: a planted `core.fsmonitor` runs under plain `git diff --cached` and not under ADDA's calls.

@@ -72,16 +72,23 @@ def discover_deps(repo: Path) -> list[str]:
             data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
             deps = (data.get("project") or {}).get("dependencies") or []
             return [_dep_name(d) for d in deps]
-        except Exception:
-            pass  # no toml reader / malformed -> fall through
+        # No toml reader, unreadable, malformed, or the wrong shape -> try package.json.
+        # Named, not blind (ENH-ADDA-063): a bug in this code should surface.
+        except _UNREADABLE:
+            pass  # noqa: S110
     package = repo / "package.json"
     if package.is_file():
         try:
             data = json.loads(package.read_text(encoding="utf-8"))
             return sorted((data.get("dependencies") or {}).keys())
-        except Exception:
-            pass
+        except _UNREADABLE:
+            pass  # noqa: S110
     return []
+
+
+# ValueError covers TOMLDecodeError, JSONDecodeError and UnicodeDecodeError;
+# AttributeError and TypeError cover a list or string where a table belongs.
+_UNREADABLE = (ImportError, OSError, ValueError, AttributeError, TypeError)
 
 
 def skeleton_markdown(repo: Path) -> str:

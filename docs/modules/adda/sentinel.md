@@ -3,7 +3,7 @@
 
 # `sentinel` - `src/adda/sentinel.py`
 
-Last verified: 2026-11-02
+Last verified: 2026-11-15
 
 **Purpose** - Context Sentinel - the token-usage gauge that answers *when* to checkpoint.
 
@@ -25,6 +25,7 @@ Last verified: 2026-11-02
 
 ## Change Log (newest first)
 
+- [2026-11-15] ENH-ADDA-063 - the SDK fallback's blind except carries `noqa: BLE001, S110` with its reason; behaviour unchanged · BLE and S110 are now linted (ADR-0032).
 - [2026-11-02] ENH-ADDA-049 — the outbound-call invariant now points to its public disclosure (README section, `--file` help) · it was stated here only, while the site called ADDA offline (BUG-ADDA-036, ADR-0027).
 - [2026-10-09] FIX-011 — `MODEL_LIMITS` gains `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5` and `claude-haiku-5-5` at 1,000,000 (checked against the claude-api skill's model table) · `adda monitor --model claude-haiku-5-5` fell back to the 200k default and reported 5x the real usage. The drift this doc's invariant predicted.
 - [2026-08-26] BUG-ADDA-012 — the Anthropic SDK is now an OPTIONAL extra (`pip install adda[anthropic]`) rather than a hard dependency · it is imported lazily and already falls back to chars/4, so requiring it contradicted the provider-agnostic scope guard and pulled a vendor SDK into every install of a tool that makes no inference calls.

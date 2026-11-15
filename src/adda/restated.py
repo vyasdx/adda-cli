@@ -150,7 +150,7 @@ def _touching(phrases, lines):
             yield phrase, first
 
 
-def restated_report(repo: Path, rev: str = "HEAD", also=()) -> tuple[list, list, list]:
+def restated_report(repo: Path, rev: str = "HEAD", also=()) -> tuple[list, list, list]:  # noqa: C901 - RF-ADDA-016
     """Return (current, records, skipped).
 
     Hits are {file, line, source, words, text}. `records` holds hits on dated

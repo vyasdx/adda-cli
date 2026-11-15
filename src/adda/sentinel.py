@@ -76,6 +76,6 @@ def count_tokens(text: str, model: str | None = None) -> tuple[int, str]:
                 messages=[{"role": "user", "content": text}],
             )
             return resp.input_tokens, "anthropic"
-        except Exception:
-            pass  # no key / offline / non-counting model -> heuristic
+        except Exception:  # noqa: BLE001, S110 - any SDK, network or auth failure -> heuristic
+            pass
     return len(text) // 4, "heuristic"

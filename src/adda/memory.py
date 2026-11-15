@@ -58,7 +58,7 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().rstrip(".").lower()
 
 
-def memory_report(directory: Path, index: str = "MEMORY.md") -> tuple[list[dict], list, dict]:
+def memory_report(directory: Path, index: str = "MEMORY.md") -> tuple[list[dict], list, dict]:  # noqa: C901 - RF-ADDA-016
     """Return (findings, skipped, stats). Findings are {item, issue, severity[, ref]}."""
     findings, skipped = [], []
     notes = sorted(

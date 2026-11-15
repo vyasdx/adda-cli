@@ -97,13 +97,21 @@ src = ["src", "tests", "scripts"]
 #        "uses PEP 604 union without `from __future__ import annotations`" when
 #        the target version predates it. Dormant at the current 3.10 floor, and
 #        kept because that bug shipped in a release once already.
-select = ["E9", "F", "FA"]
+#   C901 — function complexity, max 15 (ENH-ADDA-063, ADR-0032). Agents fix
+#        a bug by adding one more branch to the function that already works;
+#        nothing else stops that. Functions already over the limit carry
+#        `noqa: C901` naming the issue that splits them (RF-ADDA-016).
+#   BLE001, S110 — a blind `except Exception` or try/except/pass (ENH-ADDA-063).
+#        Each deliberate one says why on its own line (`noqa`), so a new one
+#        cannot slip in as a quick fix. Until 2026-11-15 these were off because
+#        the existing ones were deliberate; sync.py's two now name what they catch.
+select = ["E9", "F", "FA", "C901", "BLE", "S110"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
 
 # NOT enabled, each for a concrete reason rather than taste:
 #   B008     — `typer.Option(...)` as a default IS Typer's required idiom.
-#   BLE001   — the broad `except Exception` paths in compress.py and sync.py are
-#              deliberate graceful degradation, documented as such.
-#   S110     — same try/except/pass fallbacks.
 #   PLW1510  — wants subprocess(check=True), but audit._is_ancestor MUST read
 #              exit 1 (a real "no") apart from 128 (cannot tell). check=True
 #              would collapse that distinction and break the three-state

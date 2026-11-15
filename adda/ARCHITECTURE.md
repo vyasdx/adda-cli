@@ -20,6 +20,7 @@ rehydrate → audit/enforce.
 - headroom-ai is an OPTIONAL dependency with graceful no-op fallback; `--compress` is opt-in and default output stays faithful, valid OKF.
 - Net-new tool: imports zero source from any internal project.
 - Every source file carries the authorship header.
+- Lint gates agent slop: no function over complexity 15, no blind `except` without its reason on the line (ADR-0032).
 
 ## Modules
 
