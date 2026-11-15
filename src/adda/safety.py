@@ -8,6 +8,7 @@ reading outside it.
 """
 
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -24,6 +25,16 @@ IMPORT_CHECK = _SCRUB + "import adda.cli"
 # (core.fsmonitor on index refreshes). A plain clone never carries config, an
 # archive with a git directory does. Command-line config wins over the repo's.
 GIT = ["git", "-c", "core.fsmonitor=false", "-c", "safe.bareRepository=explicit"]
+
+# BUG-ADDA-050 L3: a filename or link target can carry terminal escape codes that
+# hide or forge lines in ADDA's report. Tabs and newlines stay; JSON already
+# escapes the rest of C0, so only the terminal sees a difference.
+_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def printable(message):
+    """`message` without control characters, for the terminal."""
+    return _CONTROL.sub("", message) if isinstance(message, str) else message
 
 
 class UnsafeWrite(Exception):

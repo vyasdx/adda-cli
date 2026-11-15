@@ -54,6 +54,10 @@ _CORPUS_SKIP = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", "
 # code. Prose (`sync.PROSE_SUFFIXES`) is the one exception: a doc must not vouch
 # for its own citation.
 _CORPUS_MAX_BYTES = 1_000_000  # a vendored bundle or dump is not a definition
+# BUG-ADDA-050 L2: matching spans is quadratic in line length (a 48 KB line took
+# 5 s), and every repository's README is read. Prose past these sizes is a dump.
+_DOC_MAX_BYTES = 1_000_000
+_LINE_MAX = 10_000
 
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
@@ -237,6 +241,32 @@ def _read_code(path: Path):
         return None
 
 
+def _read_doc(path: Path):
+    """(text, long lines) of a doc to check; text is None if the doc is too large.
+
+    A line over `_LINE_MAX` is blanked, not dropped, so line numbers stay true.
+    """
+    if path.stat().st_size > _DOC_MAX_BYTES:
+        return None, 0
+    lines = path.read_text(encoding="utf-8").split("\n")
+    long = [i for i, line in enumerate(lines) if len(line) > _LINE_MAX]
+    for i in long:
+        lines[i] = ""
+    return "\n".join(lines), len(long)
+
+
+def _size_skips(what: str, too_large: list, long_lines: list) -> list[str]:
+    """`skipped` lines for docs and lines too large to check."""
+    out = []
+    if too_large:
+        out.append(f"{what} skipped for {len(too_large)} file(s) over "
+                   f"{_DOC_MAX_BYTES:,} bytes: {', '.join(too_large)}")
+    if long_lines:
+        out.append(f"{what} skipped {sum(n for _, n in long_lines)} line(s) over "
+                   f"{_LINE_MAX:,} characters in: {', '.join(d for d, _ in long_lines)}")
+    return out
+
+
 def refs_report(repo: Path, adda_dir: Path) -> tuple[list[dict], list, dict]:
     """Return (findings, skipped, stats) for every mapped doc that exists.
 
@@ -252,16 +282,21 @@ def refs_report(repo: Path, adda_dir: Path) -> tuple[list[dict], list, dict]:
         skipped.append("refs-check skipped: no source files found to check cited names against")
         return findings, skipped, stats
 
-    unreadable = []
+    unreadable, too_large, long_lines = [], [], []
     for doc in sorted(set(mapping.values())):
         path = repo / doc
         if not path.is_file():
             continue  # a missing doc is audit rule 1's finding, not a second one here
         try:
-            text = path.read_text(encoding="utf-8")
+            text, long = _read_doc(path)
         except (OSError, UnicodeDecodeError):
             unreadable.append(doc)
             continue
+        if text is None:
+            too_large.append(doc)
+            continue
+        if long:
+            long_lines.append((doc, long))
         stats["docs"] += 1
         local = _example_defs(text)
         for line, name in extract_refs(text):
@@ -277,6 +312,7 @@ def refs_report(repo: Path, adda_dir: Path) -> tuple[list[dict], list, dict]:
             f"refs-check skipped for {len(unreadable)} doc(s) that could not be read "
             f"as UTF-8: {', '.join(unreadable)}"
         )
+    skipped += _size_skips("refs-check", too_large, long_lines)
     return findings, skipped, stats
 
 
@@ -514,7 +550,7 @@ def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:
     if names is None:
         skipped.append("instruction-file name check skipped: no source files found")
     submodules = _submodules(repo)
-    unreadable = []
+    unreadable, too_large, long_lines = [], [], []
     for rel, home in present:
         # Where a cited path may be anchored: the root, and for a nested file
         # its own directory too - tools differ, and few document it.
@@ -526,10 +562,15 @@ def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:
         parts = home.split("/") if home else []
         roots = [""] + ["/".join(parts[:i]) for i in range(len(parts), 0, -1)]
         try:
-            text = (repo / rel).read_text(encoding="utf-8")
+            text, long = _read_doc(repo / rel)
         except (OSError, UnicodeDecodeError):
             unreadable.append(rel)
             continue
+        if text is None:
+            too_large.append(rel)
+            continue
+        if long:
+            long_lines.append((rel, long))
         stats["files"] += 1
         if names is not None:
             local = _example_defs(text)
@@ -590,4 +631,5 @@ def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:
             f"instruction-file check skipped for {len(unreadable)} file(s) that could "
             f"not be read as UTF-8: {', '.join(unreadable)}"
         )
+    skipped += _size_skips("instruction-file check", too_large, long_lines)
     return findings, skipped, stats

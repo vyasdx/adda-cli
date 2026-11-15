@@ -22,10 +22,19 @@ from adda.okf import compile_okf
 from adda.modulemap import load_instructions
 from adda.refs import instructions_report, refs_report
 from adda.rehydrate import minimal_okf
-from adda.safety import LAUNCH, UnsafeWrite, check_target
+from adda.safety import LAUNCH, UnsafeWrite, check_target, printable
 from adda.safety import write_text as _safe_write
 from adda.sentinel import ContextSentinel, count_tokens, limit_for
 from adda.sync import skeleton_markdown
+
+
+def _echo(message=None, **kw):
+    """Everything ADDA prints goes through here: repository text is shown, never obeyed."""
+    typer.echo(printable(message), **kw)
+
+
+def _secho(message=None, **kw):
+    typer.secho(printable(message), **kw)
 
 
 def _force_utf8_output() -> None:
@@ -69,7 +78,7 @@ def _write(target: Path, text: str, root: Path, newline: str = None) -> None:
     try:
         _safe_write(target, text, root=root, newline=newline)
     except UnsafeWrite as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
+        _secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
 
 
@@ -94,9 +103,9 @@ def _maybe_compress(text: str, compress: bool) -> str:
         detail = f"{saved} tokens saved" if saved is not None else "applied"
         if ratio is not None:
             detail += f" ({ratio:.0%} smaller)"
-        typer.secho(f"[compress] headroom: {detail}", fg=typer.colors.CYAN)
+        _secho(f"[compress] headroom: {detail}", fg=typer.colors.CYAN)
         return out
-    typer.secho(
+    _secho(
         f"[compress] skipped ({info.get('reason')}) - emitting uncompressed.",
         fg=typer.colors.YELLOW,
     )
@@ -106,7 +115,7 @@ def _maybe_compress(text: str, compress: bool) -> str:
 @app.command()
 def version() -> None:
     """Print the ADDA version."""
-    typer.echo(__version__)
+    _echo(__version__)
 
 
 @app.command()
@@ -122,7 +131,7 @@ def init(
     dest = path / "adda"
     if dest.exists():
         if not force:
-            typer.secho(
+            _secho(
                 f"{dest} already exists. Use --force to overwrite.",
                 fg=typer.colors.RED,
             )
@@ -138,7 +147,7 @@ def init(
             try:
                 check_target(dest / src.relative_to(TEMPLATES), root=path)
             except UnsafeWrite as exc:
-                typer.secho(str(exc), fg=typer.colors.RED)
+                _secho(str(exc), fg=typer.colors.RED)
                 raise typer.Exit(1)
         kept = [
             f for f in sorted(dest.rglob("*"))
@@ -146,15 +155,15 @@ def init(
         ]
         shutil.copytree(TEMPLATES, dest, dirs_exist_ok=True)
         if kept:
-            typer.secho(
+            _secho(
                 f"Kept {len(kept)} file(s) that are not part of the scaffold:",
                 fg=typer.colors.YELLOW,
             )
             for f in kept:
-                typer.echo(f"  {f.relative_to(dest).as_posix()}")
+                _echo(f"  {f.relative_to(dest).as_posix()}")
     else:
         shutil.copytree(TEMPLATES, dest)
-    typer.secho(f"Scaffolded ADDA memory at {dest}", fg=typer.colors.GREEN)
+    _secho(f"Scaffolded ADDA memory at {dest}", fg=typer.colors.GREEN)
 
 
 @app.command()
@@ -180,7 +189,7 @@ def export(
         json.dumps(okf_obj.model_dump(), indent=2, ensure_ascii=False), compress
     )
     _write(target, text + "\n", root=adda_dir.parent)
-    typer.secho(
+    _secho(
         f"Wrote OKF -> {target}  "
         f"({len(okf_obj.architecture.modules)} modules, "
         f"{len(okf_obj.decisions)} decisions, "
@@ -228,13 +237,13 @@ def monitor(
         "ALERT": typer.colors.RED,
         "FORCE": typer.colors.RED,
     }[status]
-    typer.secho(
+    _secho(
         f"{status}  {sentinel.percent(tokens):.1f}%  "
         f"({tokens}/{eff_limit} tokens via {method})",
         fg=color,
     )
     if status != "OK":
-        typer.echo("-> Checkpoint now: run `adda checkpoint`, then `adda rehydrate` after a compaction.")
+        _echo("-> Checkpoint now: run `adda checkpoint`, then `adda rehydrate` after a compaction.")
 
 
 @app.command()
@@ -256,9 +265,9 @@ def rehydrate(
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
         _write(out, text + "\n", root=adda_dir.parent)
-        typer.secho(f"Wrote minimal OKF -> {out}", fg=typer.colors.GREEN)
+        _secho(f"Wrote minimal OKF -> {out}", fg=typer.colors.GREEN)
     else:
-        typer.echo(text)
+        _echo(text)
 
 
 @app.command()
@@ -286,7 +295,7 @@ def checkpoint(
     if message:
         header += f"\nmessage: {message}\n"
     _write(dest, header + "\n" + current.read_text(encoding="utf-8"), root=adda_dir.parent)
-    typer.secho(f"Checkpoint saved -> {dest}", fg=typer.colors.GREEN)
+    _secho(f"Checkpoint saved -> {dest}", fg=typer.colors.GREEN)
 
 
 @app.command()
@@ -307,7 +316,7 @@ def sync(
     from adda.sync import declared_docs, import_map, module_map_json, source_files
 
     if from_ is not None and not map_:
-        typer.secho("--from imports a map, so it needs --map.", fg=typer.colors.RED)
+        _secho("--from imports a map, so it needs --map.", fg=typer.colors.RED)
         raise typer.Exit(2)
 
     previous = {}
@@ -330,7 +339,7 @@ def sync(
             source = json.loads(from_.read_text(encoding="utf-8"))
             imported, notes, exempt_in = import_map(repo, source)
         except (OSError, ValueError) as exc:
-            typer.secho(f"Cannot import {from_}: {exc}", fg=typer.colors.RED)
+            _secho(f"Cannot import {from_}: {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
         kept = previous.get("map") if isinstance(previous.get("map"), dict) else {}
         written = previous.get("exempt") if isinstance(previous.get("exempt"), list) else []
@@ -349,20 +358,20 @@ def sync(
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
         _write(out, text + "\n", root=repo)
-        typer.secho(f"Wrote {label} -> {out}", fg=typer.colors.GREEN)
+        _secho(f"Wrote {label} -> {out}", fg=typer.colors.GREEN)
         if from_ is not None:
-            typer.echo(f"Imported {len(imported)} entr(ies) from {from_}.")
+            _echo(f"Imported {len(imported)} entr(ies) from {from_}.")
             if exempt_in:
-                typer.echo(f"Imported {len(exempt_in)} exemption(s) the map lists as needing no doc.")
+                _echo(f"Imported {len(exempt_in)} exemption(s) the map lists as needing no doc.")
             for note in notes:
-                typer.secho(f"  {note}", fg=typer.colors.YELLOW)
+                _secho(f"  {note}", fg=typer.colors.YELLOW)
         old = previous.get("map") if isinstance(previous.get("map"), dict) else {}
         written = json.loads(text)["map"] if map_ else {}
         took = sum(1 for code, doc in named.items() if code not in old and written.get(code) == doc)
         if took:
-            typer.echo(f"{took} new entr(ies) point at the module doc that already names the file.")
+            _echo(f"{took} new entr(ies) point at the module doc that already names the file.")
     else:
-        typer.echo(text)
+        _echo(text)
 
 
 @app.command()
@@ -375,12 +384,12 @@ def diff(
     adda_dir = _resolve_adda_dir(path)
     gaps = diff_report(adda_dir.parent, adda_dir)
     if not gaps:
-        typer.secho("No drift: documented modules match the repo.", fg=typer.colors.GREEN)
+        _secho("No drift: documented modules match the repo.", fg=typer.colors.GREEN)
         return
-    typer.secho(f"Drift detected: {len(gaps)} gap(s)", fg=typer.colors.RED)
+    _secho(f"Drift detected: {len(gaps)} gap(s)", fg=typer.colors.RED)
     for g in gaps:
         c = typer.colors.RED if g["severity"] == "high" else typer.colors.YELLOW
-        typer.secho(
+        _secho(
             f"  [{g['severity']:<6}] {g['module']}: "
             f"documented={g['documented']}  actual={g['actual']}",
             fg=c,
@@ -418,9 +427,9 @@ def audit(
             skipped += ref_skipped + inst_skipped
     except FileNotFoundError as exc:
         if json_out:
-            typer.echo(json.dumps({"error": str(exc), "findings": [], "skipped": []}, indent=2))
+            _echo(json.dumps({"error": str(exc), "findings": [], "skipped": []}, indent=2))
         else:
-            typer.secho(str(exc), fg=typer.colors.RED)
+            _secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
 
     if json_out:
@@ -429,34 +438,34 @@ def audit(
             report["refs"] = ref_stats
             report["instructions"] = inst_stats
             report["counts"] = {"audit": audit_count, "refs": len(findings) - audit_count}
-        typer.echo(json.dumps(report, indent=2))
+        _echo(json.dumps(report, indent=2))
         raise typer.Exit(1 if findings else 0)
 
     for note in skipped:
-        typer.secho(f"[skipped] {note}", fg=typer.colors.YELLOW)
+        _secho(f"[skipped] {note}", fg=typer.colors.YELLOW)
     if ref_stats is not None:
         # Always say how much was checked: a rule that looked at nothing must
         # never read like a clean pass.
-        typer.echo(
+        _echo(
             f"[refs] checked {ref_stats['refs']} code name(s) cited in {ref_stats['docs']} doc(s)"
         )
-        typer.echo(
+        _echo(
             f"[refs] checked {inst_stats['refs']} code name(s) and {inst_stats['paths']} path(s) "
             f"in {inst_stats['files']} instruction file(s); {inst_stats['unresolved']} path-like "
             f"span(s) did not resolve inside this repo and were not checked"
         )
     if not findings:
-        typer.secho("No doc drift: every mapped code path has a current doc.", fg=typer.colors.GREEN)
+        _secho("No doc drift: every mapped code path has a current doc.", fg=typer.colors.GREEN)
         return
     # ENH-ADDA-045: with --refs the total holds both kinds; say which is which,
     # or the total gets read as a --refs baseline (it was, twice, in wave 1).
     split = (f": {audit_count} from audit, {len(findings) - audit_count} from --refs"
              if ref_stats is not None else "")
-    typer.secho(f"Doc drift detected: {len(findings)} finding(s){split}", fg=typer.colors.RED)
+    _secho(f"Doc drift detected: {len(findings)} finding(s){split}", fg=typer.colors.RED)
     colors = {"high": typer.colors.RED, "medium": typer.colors.YELLOW, "low": typer.colors.CYAN}
     for f in findings:
         name = f" `{f['ref']}`" if "ref" in f else ""
-        typer.secho(
+        _secho(
             f"  [{f['severity']:<6}] {f['issue']:<14} {f['item']}{name}",
             fg=colors.get(f["severity"], typer.colors.WHITE),
         )
@@ -474,35 +483,35 @@ def eval_cmd(
     adda_dir = _resolve_adda_dir(path)
     report = evaluate(compile_okf(adda_dir), adda_dir)
     if json_out:
-        typer.echo(json.dumps(report, indent=2))
+        _echo(json.dumps(report, indent=2))
         return
     if report["overall_fidelity_pct"] is None:
-        typer.secho(
+        _secho(
             "Rehydration fidelity: n/a - every architecture file is still the "
             "scaffold `adda init` wrote. There is no authored memory to score.",
             fg=typer.colors.YELLOW,
         )
-        typer.echo("  write your constraints, modules and decisions into adda/, then re-run.")
+        _echo("  write your constraints, modules and decisions into adda/, then re-run.")
         return
-    typer.secho(
+    _secho(
         f"Rehydration fidelity: {report['overall_fidelity_pct']}% overall, "
         f"{report['load_bearing_fidelity_pct']}% load-bearing",
         fg=typer.colors.GREEN,
     )
     if report["unauthored_template_files"]:
-        typer.secho(
+        _secho(
             "  [partial] still unwritten scaffold: "
             + ", ".join(report["unauthored_template_files"])
             + " - the score counts placeholder text as memory.",
             fg=typer.colors.YELLOW,
         )
-    typer.echo(
+    _echo(
         f"  facts preserved: {report['facts_preserved']}/{report['facts_total']}  |  "
         f"payload {report['payload_reduction_pct']}% smaller "
         f"({report['minimal_chars']} vs {report['full_chars']} chars)"
     )
     if report["dropped"]:
-        typer.echo("  dropped (non-load-bearing): " + ", ".join(report["dropped"]))
+        _echo("  dropped (non-load-bearing): " + ", ".join(report["dropped"]))
 
 
 @app.command()
@@ -515,24 +524,24 @@ def memory(
     from adda.memory import memory_report
 
     if not directory.is_dir():
-        typer.secho(f"{directory} is not a directory.", fg=typer.colors.RED)
+        _secho(f"{directory} is not a directory.", fg=typer.colors.RED)
         raise typer.Exit(1)
     findings, skipped, stats = memory_report(directory, index)
     if json_out:
-        typer.echo(json.dumps({"findings": findings, "skipped": skipped, "stats": stats}, indent=2))
+        _echo(json.dumps({"findings": findings, "skipped": skipped, "stats": stats}, indent=2))
     else:
         for s in skipped:
-            typer.secho(f"[skipped] {s}", fg=typer.colors.YELLOW)
-        typer.echo(
+            _secho(f"[skipped] {s}", fg=typer.colors.YELLOW)
+        _echo(
             f"[memory] checked {stats['files']} file(s), {stats['entries']} index entr(ies), "
             f"{stats['links']} link(s)"
         )
         for f in findings:
             ref = f" `{f['ref']}`" if "ref" in f else ""
             colour = typer.colors.RED if f["severity"] == "high" else typer.colors.YELLOW
-            typer.secho(f"  [{f['severity']:<6}] {f['issue']:<22} {f['item']}{ref}", fg=colour)
+            _secho(f"  [{f['severity']:<6}] {f['issue']:<22} {f['item']}{ref}", fg=colour)
         if not findings:
-            typer.secho("No memory drift.", fg=typer.colors.GREEN)
+            _secho("No memory drift.", fg=typer.colors.GREEN)
     if findings:
         raise typer.Exit(1)
 
@@ -552,23 +561,23 @@ def restated(
     try:
         current, records, skipped = restated_report(path, rev, also)
     except (subprocess.CalledProcessError, OSError):
-        typer.secho(f"Cannot read {rev} in {path}: not a git repository, or no such commit.",
+        _secho(f"Cannot read {rev} in {path}: not a git repository, or no such commit.",
                     fg=typer.colors.RED)
         raise typer.Exit(1)
     if json_out:
-        typer.echo(json.dumps({"current": current, "records": records, "skipped": skipped}, indent=2))
+        _echo(json.dumps({"current": current, "records": records, "skipped": skipped}, indent=2))
     else:
         for s in skipped:
-            typer.secho(f"[skipped] {s}", fg=typer.colors.YELLOW)
+            _secho(f"[skipped] {s}", fg=typer.colors.YELLOW)
         for title, group, colour in (("Still stated in current files", current, typer.colors.RED),
                                      ("Also in dated records (history, usually left as is)", records, None)):
             if group:
-                typer.secho(f"{title}:", fg=colour)
+                _secho(f"{title}:", fg=colour)
                 for h in group:
-                    typer.echo(f"  {h['file']}:{h['line']}  <- {h['source']}  \"{h['text']}\"")
+                    _echo(f"  {h['file']}:{h['line']}  <- {h['source']}  \"{h['text']}\"")
         if not current and not records and not skipped:
-            typer.secho(f"Nothing {rev} removed is still stated elsewhere.", fg=typer.colors.GREEN)
-        typer.echo("(Finds exact copies, not paraphrases: a reworded statement of the old fact is not seen.)")
+            _secho(f"Nothing {rev} removed is still stated elsewhere.", fg=typer.colors.GREEN)
+        _echo("(Finds exact copies, not paraphrases: a reworded statement of the old fact is not seen.)")
     if current:
         raise typer.Exit(1)
 
@@ -585,9 +594,9 @@ def doctor(
              "n/a": ("[ -- ]", None)}
     for c in checks:
         mark, colour = marks[c["state"]]
-        typer.secho(f"{mark} {c['check']}: {c['detail']}", fg=colour)
+        _secho(f"{mark} {c['check']}: {c['detail']}", fg=colour)
     counts = {s: sum(c["state"] == s for c in checks) for s in marks}
-    typer.echo(f"\n{counts['ok']} ok, {counts['fail']} failed, {counts['n/a']} not applicable")
+    _echo(f"\n{counts['ok']} ok, {counts['fail']} failed, {counts['n/a']} not applicable")
     if counts["fail"]:
         raise typer.Exit(1)
 
@@ -602,7 +611,7 @@ def hook_run(
 ) -> None:
     """Block the commit when staged code is missing its staged doc."""
     if os.environ.get("ADDA_SKIP"):
-        typer.secho("[adda] ADDA_SKIP set - doc gate bypassed.", fg=typer.colors.YELLOW)
+        _secho("[adda] ADDA_SKIP set - doc gate bypassed.", fg=typer.colors.YELLOW)
         return
     try:
         adda_dir = _resolve_adda_dir(path)
@@ -611,11 +620,11 @@ def hook_run(
     gaps = check_staged(adda_dir.parent, adda_dir, staged_paths(adda_dir.parent))
     if not gaps:
         return
-    typer.secho(f"Commit blocked: {len(gaps)} code change(s) without their doc.", fg=typer.colors.RED)
+    _secho(f"Commit blocked: {len(gaps)} code change(s) without their doc.", fg=typer.colors.RED)
     for code, doc in gaps:
-        typer.secho(f"  {code}  ->  update and stage {doc}", fg=typer.colors.RED)
-    typer.echo("\nUpdate the doc (bump `Last verified`, append to its Change Log), then stage it.")
-    typer.echo("To bypass deliberately: `git commit --no-verify`, or set ADDA_SKIP=1.")
+        _secho(f"  {code}  ->  update and stage {doc}", fg=typer.colors.RED)
+    _echo("\nUpdate the doc (bump `Last verified`, append to its Change Log), then stage it.")
+    _echo("To bypass deliberately: `git commit --no-verify`, or set ADDA_SKIP=1.")
     raise typer.Exit(1)
 
 
@@ -630,24 +639,24 @@ def hook_install(
     # reported installed while enforcing nothing.
     hooks = hooks_dir(path)
     if hooks is None:
-        typer.secho(f"{path} is not a git repo.", fg=typer.colors.RED)
+        _secho(f"{path} is not a git repo.", fg=typer.colors.RED)
         raise typer.Exit(1)
     custom = hooks.resolve() != (path / ".git" / "hooks").resolve()
     if hooks_outside_repo(path, hooks) and not force:
         # BUG-ADDA-034: an absolute core.hooksPath copied with .git/config made a
         # gate installed in a scratch copy land in the real repository.
-        typer.secho(
+        _secho(
             f"git reads hooks from {hooks}, which is outside this repository ({path.resolve()}).",
             fg=typer.colors.RED,
         )
-        typer.echo("Installing there would gate another checkout (an absolute core.hooksPath travels "
+        _echo("Installing there would gate another checkout (an absolute core.hooksPath travels "
                    "with .git/config into copies). If the folder is shared on purpose, re-run with --force.")
         raise typer.Exit(1)
     hooks.mkdir(parents=True, exist_ok=True)
     target = hooks / "pre-commit"
     if target.exists() and not force:
-        typer.secho(f"{target} already exists. Re-run with --force, or add this line yourself:", fg=typer.colors.RED)
-        typer.echo(f"""  exec "{sys.executable}" -c '{LAUNCH}' hook run""")
+        _secho(f"{target} already exists. Re-run with --force, or add this line yourself:", fg=typer.colors.RED)
+        _echo(f"""  exec "{sys.executable}" -c '{LAUNCH}' hook run""")
         raise typer.Exit(1)
     body = hook_body(sys.executable)
     _write(target, body, root=path, newline="\n")
@@ -656,13 +665,13 @@ def hook_install(
     target.chmod(0o755)
     written = target.read_text(encoding="utf-8")
     if "hook run" not in written:
-        typer.secho(f"Wrote {target} but the content looks wrong - install failed.", fg=typer.colors.RED)
+        _secho(f"Wrote {target} but the content looks wrong - install failed.", fg=typer.colors.RED)
         raise typer.Exit(1)
-    typer.secho(f"Installed doc gate -> {target}", fg=typer.colors.GREEN)
+    _secho(f"Installed doc gate -> {target}", fg=typer.colors.GREEN)
     if custom:
-        typer.echo("(core.hooksPath is set, so the gate goes where git reads hooks, not .git/hooks.)")
-    typer.echo("Bypass when you must: `git commit --no-verify` or ADDA_SKIP=1.")
-    typer.echo("Prove it is on: `adda doctor`.")
+        _echo("(core.hooksPath is set, so the gate goes where git reads hooks, not .git/hooks.)")
+    _echo("Bypass when you must: `git commit --no-verify` or ADDA_SKIP=1.")
+    _echo("Prove it is on: `adda doctor`.")
 
 
 if __name__ == "__main__":  # `python -m adda.cli`; the git hook uses safety.LAUNCH instead

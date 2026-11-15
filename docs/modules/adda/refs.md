@@ -3,7 +3,7 @@
 
 # `refs` - `src/adda/refs.py`
 
-Last verified: 2026-11-14
+Last verified: 2026-11-15
 
 **Purpose** - The deterministic slice of the gap ancestry cannot see (ADR-0010, ADR-0011). `audit` decides staleness by commit ancestry, so a doc committed alongside its code reads as current even when it names a function deleted in that same commit. `refs` checks that every code name a mapped doc cites still appears somewhere in the source. Opt-in, via `adda audit --refs`.
 
@@ -18,6 +18,7 @@ Findings are `{"item": "file:line", "issue": "ref missing" | "path missing" | "l
 ## Invariants
 
 - **Deterministic and offline - no model calls (ADR-0003).** It checks that a cited name *exists*. It never judges whether the prose around it is true; that would take a model, and ADR-0010 keeps that out of `audit`.
+- **Bounded time.** A doc over 1 MB, or a line over 10,000 characters, is not checked; `skipped` names it (ADR-0031).
 - **Opt-in.** Plain `adda audit` keeps exactly its five rules and exit code, so no CI already running it changes behaviour. A new rule has a new false-positive profile and earns default status by running clean first.
 - **Existence is searched across all code, not the doc's own module.** A doc may cite a neighbour module, a test helper or a script. The corpus is every text file outside dependency, environment and cache trees (`_CORPUS_SKIP`; `docs`, `build` and dot-folders are read, ADR-0029) - because the question is "does this name exist?", not "what needs a doc?" - except prose (`.md`, `.rst`, `.txt` and kin), files over 1 MB (ADR-0022), files git ignores and nested repositories (ADR-0024). A file's own name counts as a name (a command or test is cited by its file). SQL migrations, Prisma schemas, shell scripts and workflows define names too; prose would let one doc vouch for another's citation. "Is there code at all" still counts only `sync.SOURCE_SUFFIXES` files. Searching more code can only turn a flag into a pass, the safe direction for this rule.
 - **History sections are not checked.** A heading matching change log or history starts one, and it runs until the next heading at the same or shallower level. A Change Log exists to name code that is gone.
@@ -43,6 +44,7 @@ Findings are `{"item": "file:line", "issue": "ref missing" | "path missing" | "l
 
 ## Change Log (newest first)
 
+- [2026-11-15] BUG-ADDA-050 (L2) — a doc over 1 MB and any line over 10,000 characters are skipped and listed in `skipped`; a long line is blanked so line numbers hold · span matching is quadratic in line length (48 KB: 5 s), and every repository's README is read (ADR-0031).
 - [2026-11-14] BUG-ADDA-050 (L1) — `_ignored` passes `--` before the path · a doc link such as `[x](--stdin)` reached `git check-ignore` as an option (a 10 s wait each), and an ignored file named `-x.md` read as not ignored.
 - [2026-11-14] BUG-ADDA-047 — git calls start with `safety.GIT` (`-c core.fsmonitor=false -c safe.bareRepository=explicit`) · a repository's own git config can name a program for git to run; a clone never carries config, an archive with a git directory does. Test: a planted `core.fsmonitor` runs under plain `git diff --cached` and not under ADDA's calls.
 - [2026-11-03] BUG-ADDA-044 — `extract_refs` drops names built on foo/bar/baz/qux (`_meta`); `bar` only beside a foo · round 4: TrueFoundry's API conventions are written for a resource called Foo, 28 false `ref missing`; no hand-checked real finding in rounds 3-4 has such a word.

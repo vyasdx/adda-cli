@@ -169,3 +169,51 @@ def test_init_force_refuses_a_scaffold_file_that_is_a_symlink(tmp_path):
     res = runner.invoke(app, ["init", str(repo), "--force"])
     assert res.exit_code == 1
     assert victim.read_text(encoding="utf-8") == "keep"
+
+
+def test_printable_drops_control_characters_but_keeps_layout():
+    # BUG-ADDA-050 (L3): escape codes in a filename could hide or forge report lines.
+    from adda.safety import printable
+
+    assert printable("a\x1b[2Jb\tc\nd\x9be\x7f\r") == "a[2Jb\tc\nde"
+    assert printable(None) is None
+
+
+def test_report_output_carries_no_escape_codes_from_the_repo(tmp_path):
+    from adda.modulemap import MAP_FILENAME
+
+    (tmp_path / "adda").mkdir()
+    (tmp_path / "adda" / MAP_FILENAME).write_text(
+        json.dumps({"map": {"src/app.py": "docs/app.md"}, "exempt": []}), encoding="utf-8")
+    for rel, text in {"src/app.py": "x = 1\n", "docs/app.md": "# app\n",
+                      "AGENTS.md": "See [it](<src/gone\x1b[2J.md>).\n"}.items():
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(text, encoding="utf-8")
+    res = runner.invoke(app, ["audit", str(tmp_path), "--refs"])
+    assert "src/gone[2J.md" in res.output
+    assert "\x1b" not in res.output
+
+
+def test_an_over_long_line_is_skipped_and_line_numbers_hold(tmp_path):
+    # BUG-ADDA-050 (L2): matching is quadratic in line length (a 48 KB line took 5 s).
+    from adda.refs import _LINE_MAX, instructions_report
+
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
+    long = "`src/gone.py` " + "x" * _LINE_MAX
+    (tmp_path / "AGENTS.md").write_text(f"{long}\nRun `src/lost.py`.\n", encoding="utf-8")
+    findings, skipped, _ = instructions_report(tmp_path)
+    assert [(f["item"], f["ref"]) for f in findings] == [("AGENTS.md:2", "src/lost.py")]
+    assert any("1 line(s) over" in s and "AGENTS.md" in s for s in skipped)
+
+
+def test_a_doc_over_the_size_cap_is_skipped_and_reported(tmp_path):
+    from adda.refs import _DOC_MAX_BYTES, instructions_report
+
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("Run `src/gone.py`.\n" * (_DOC_MAX_BYTES // 10),
+                                        encoding="utf-8")
+    findings, skipped, stats = instructions_report(tmp_path)
+    assert findings == [] and stats["files"] == 0
+    assert any("over 1,000,000 bytes: AGENTS.md" in s for s in skipped)
