@@ -170,6 +170,95 @@ def test_cli_json(tmp_path):
     assert [h["file"] for h in data["current"]] == ["guide.md"] and data["records"] == []
 
 
+# ENH-ADDA-062: mutation testing found 74 of 306 changes to restated.py that no
+# test noticed. Every test above edits one line in place, so removed and added
+# line numbers were always equal, and none checked a hit's fields exactly.
+
+COPY = "nightly deploy runs on the blue cluster at nine every evening"
+
+
+def test_a_hit_reports_exact_fields_when_lines_shift(tmp_path):
+    # Two lines prepended and two removed: old and new line numbers differ.
+    # The copy appears twice on one line: two spans, one hit, the longest.
+    _repo(tmp_path, {"ops.md": f"# Ops\n\nIntro.\n{OLD}\n", "guide.md": f"# Guide\n\n{OLD} {OLD}\n"})
+    _commit(tmp_path, {"ops.md": f"Preface one.\nPreface two.\n# Ops\n\n{NEW}\n"}, "fix")
+    current, records, _ = restated_report(tmp_path, "HEAD")
+    assert records == []
+    assert current == [{"file": "guide.md", "line": 3, "source": "ops.md:4", "words": 11, "text": COPY}]
+
+
+def test_a_renamed_file_is_compared_with_its_old_self(tmp_path):
+    body = "# Ops\n\nLine about things.\nLine about stuff.\nLine about more.\n"
+    _repo(tmp_path, {"ops.md": f"{body}{OLD}\n", "guide.md": f"{OLD}\n"})
+    _commit(tmp_path, {"ops.md": None, "runbook.md": f"{body}{NEW}\n"}, "rename and fix")
+    current = restated_report(tmp_path, "HEAD")[0]
+    assert [(h["file"], h["source"]) for h in current] == [("guide.md", "ops.md:6")]
+
+
+def test_which_files_are_searched(tmp_path):
+    _repo(tmp_path, {"ops.md": f"{OLD}\n", "docs/guide.md": f"{OLD}\n", "notes.txt": f"{OLD}\n",
+                     "page.rst": f"{OLD}\n", "logs/run.md": f"{OLD}\n", "app.py": f"X = '{OLD}'\n"})
+    _commit(tmp_path, {"ops.md": f"{NEW}\n"}, "fix")
+    assert _where(restated_report(tmp_path, "HEAD")[0]) == ["docs/guide.md:1", "notes.txt:1", "page.rst:1"]
+
+
+def test_six_words_are_enough_and_line_is_where_the_phrase_starts(tmp_path):
+    # No trailing newline: the last word of the file must be read whole.
+    _repo(tmp_path, {"ops.md": f"{OLD}\n", "guide.md": "Intro.\nThe\nnightly\ndeploy runs on the blue"})
+    _commit(tmp_path, {"ops.md": f"{NEW}\n"}, "fix")
+    current = restated_report(tmp_path, "HEAD")[0]
+    assert [(h["line"], h["words"]) for h in current] == [(3, 6)]
+
+
+def test_prose_after_a_fence_history_and_tables(tmp_path):
+    guide = ("```\ncode\n```\n\n"                                  # prose after a fence counts
+             f"{OLD}\n\n"                                          # line 5
+             "## Change Log\n\n### 2026\n\n"                       # a subsection stays history
+             f"- {OLD}\n\n"
+             "## Current\n\n"                                      # a same-level heading ends it
+             f"{OLD}\n\n"                                          # line 15
+             "| the nightly deploy runs on |\n| the blue cluster at nine |\n\n"  # rows break phrases
+             "the nightly deploy runs on\n---\nthe blue cluster at nine\n---\nevery evening\n")
+    _repo(tmp_path, {"ops.md": f"{OLD}\n", "guide.md": guide})
+    _commit(tmp_path, {"ops.md": f"{NEW}\n"}, "fix")
+    assert _where(restated_report(tmp_path, "HEAD")[0]) == ["guide.md:15", "guide.md:5"]
+
+
+def test_a_fact_split_across_lines_when_only_its_second_line_changes(tmp_path):
+    _repo(tmp_path, {"ops.md": "The nightly deploy runs on the blue cluster at\nnine every evening.\n",
+                     "guide.md": f"{OLD}\n"})
+    _commit(tmp_path, {"ops.md": "The nightly deploy runs on the blue cluster at\nten every evening.\n"}, "fix")
+    current = restated_report(tmp_path, "HEAD")[0]
+    assert [(h["source"], h["words"], h["text"]) for h in current] == [
+        ("ops.md:1", 8, "on the blue cluster at nine every evening")]
+
+
+def test_one_commit_touching_several_files(tmp_path):
+    # a.md loses a short line (nothing to search), b.md is new, tool.py is code,
+    # and a move into c-new.md is followed by an unrelated addition to d.md.
+    _repo(tmp_path, {"a.md": "x\nkeep this line\n", "d.md": "Old notes.\n", "ops.md": f"{OLD}\n",
+                     "keep.md": f"# Keep\n\n{OLD.replace('nightly', 'weekly')}\n",
+                     "tool.py": "x = 1\n", "guide.md": f"{OLD}\n"})
+    _commit(tmp_path, {"a.md": "keep this line\n", "b.md": "Brand new file.\n", "tool.py": "x = 2\n",
+                       "keep.md": "# Keep\n", "c-new.md": f"{OLD.replace('nightly', 'weekly')}\n",
+                       "d.md": "Old notes.\nNew unrelated line here for the record.\n",
+                       "ops.md": f"{NEW}\n"}, "several")
+    assert _where(restated_report(tmp_path, "HEAD")[0]) == ["guide.md:1"]
+
+
+def test_a_dated_line_marks_only_itself(tmp_path):
+    _repo(tmp_path, {"ops.md": f"{OLD}\n", "guide.md": f"**[2026-09-01]** a dated note.\n{OLD}\n"})
+    _commit(tmp_path, {"ops.md": f"{NEW}\n"}, "fix")
+    current, records, _ = restated_report(tmp_path)  # rev defaults to HEAD
+    assert _where(current) == ["guide.md:2"] and records == []
+
+
+def test_a_move_into_a_file_that_gains_several_lines(tmp_path):
+    _repo(tmp_path, {"a.md": f"# A\n\n{OLD}\n", "b.md": "# B\n"})
+    _commit(tmp_path, {"a.md": "# A\n", "b.md": f"# B\nA new first line.\n{OLD}\n"}, "move it")
+    assert restated_report(tmp_path, "HEAD")[:2] == ([], [])
+
+
 def test_not_a_git_repo_fails_clearly(tmp_path):
     res = runner.invoke(app, ["restated", str(tmp_path)])
     assert res.exit_code == 1 and "git" in res.stdout.lower()
