@@ -1064,3 +1064,12 @@ def test_short_and_placeholder_names(tmp_path):
     _repo(tmp_path, {"src/app.py": "x = 1\n"},
           {"AGENTS.md": "Call `db()` and `Xy()`; see `qux_client()` for the shape.\n"})
     assert _missing(instructions_report(tmp_path)[0]) == ["Xy", "db"]
+
+
+def test_a_generated_folder_that_is_ignored_and_absent_is_not_missing(tmp_path):
+    # `git check-ignore lib/gen` says no for an absent folder under a `lib/gen/`
+    # pattern; only `lib/gen/index.ts` matches. That is what the index forms are for.
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    _repo(tmp_path, {"lib/api.ts": "x\n", ".gitignore": "lib/gen/\n"},
+          {"AGENTS.md": "Call through `lib/gen` and `lib/lost`.\n"})
+    assert _path_issues(instructions_report(tmp_path)[0]) == ["lib/lost"]
