@@ -16,6 +16,7 @@ from typer.testing import CliRunner
 from adda.cli import app
 from adda.modulemap import MAP_FILENAME
 from adda.refs import (
+    _convention,
     extract_links,
     extract_paths,
     extract_refs,
@@ -898,3 +899,168 @@ def test_foo_bar_template_names_are_placeholders():
 
 def test_bar_without_a_foo_is_a_real_name():
     assert extract_refs("Render the `StatusBar` and the `BazClient`.\n") == [(1, "StatusBar")]
+
+
+# --- ENH-ADDA-062: what mutation testing found untested -------------------------
+# 116 of 515 changes to refs.py passed every test: the convention lists were never
+# checked entry by entry, size caps never at their exact boundary, one bad file
+# could end the check of every file after it, and skip messages were never read.
+
+
+def _bytes(root, rel, data):
+    p = root / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(data)
+
+
+def _sized(head, size):
+    """`head` padded with 100-byte lines to exactly `size` bytes."""
+    rest = size - len(head)
+    return head + (b"z" * 99 + b"\n") * (rest // 100) + b"z" * (rest % 100)
+
+
+def test_every_documented_instruction_file_is_recognised():
+    root = ["AGENTS.md", "AGENTS.override.md", "CLAUDE.md", "GEMINI.md", "REVIEW.md",
+            ".cursor/rules/a.mdc", ".cursor/rules/a.md", ".windsurf/rules/a.md", ".devin/rules/a.md",
+            "README.md", "AGENT.md", ".rules", ".github/copilot-instructions.md",
+            ".github/instructions/a.instructions.md", ".claude/CLAUDE.md", ".claude/rules/a.md",
+            ".cursorrules", ".windsurfrules", ".clinerules", ".clinerules/a.md", ".cline/rules/a.md",
+            ".roorules", ".roo/rules/a.md", ".roo/rules-code/a.md", ".continue/rules/a.md",
+            ".amazonq/rules/a.md", ".junie/AGENTS.md", ".junie/guidelines.md", ".junie/playbook.md",
+            ".junie/rules/a.md"]
+    assert {f: _convention(f) for f in root} == {f: "" for f in root}
+    nested = {"pkg/AGENTS.md": "pkg", "pkg/sub/AGENTS.override.md": "pkg/sub", "pkg/CLAUDE.md": "pkg",
+              "pkg/GEMINI.md": "pkg", "pkg/REVIEW.md": "pkg", "pkg/.cursor/rules/x/a.mdc": "pkg",
+              "pkg/.cursor/rules/a.md": "pkg", "pkg/.windsurf/rules/a.md": "pkg",
+              "pkg/.devin/rules/a.md": "pkg"}
+    assert {f: _convention(f) for f in nested} == nested
+    for other in ("pkg/README.md", "pkg/.cursorrules", "docs/notes.md", "AGENTS.txt"):
+        assert _convention(other) is None, other
+
+
+def test_instruction_files_under_docs_tests_scripts_and_examples_are_read(tmp_path):
+    files = {"src/app.py": "x = 1\n", "node_modules/AGENTS.md": "See `src/gone.py`.\n"}
+    folders = ["doc", "docs", "examples", "scripts", "test", "tests"]
+    _repo(tmp_path, files, {f"{d}/AGENTS.md": "See `src/gone.py`.\n" for d in folders})
+    findings = instructions_report(tmp_path)[0]
+    assert sorted(f["item"] for f in findings) == [f"{d}/AGENTS.md:1" for d in folders]
+
+
+def test_names_defined_only_in_dependency_and_cache_trees_do_not_count(tmp_path):
+    trees = [".git", ".venv", "venv", "env", "node_modules", "__pycache__", "site-packages",
+             "dist", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".next", ".turbo"]
+    files = {f"{d}/m.py": f"def hidden_name_{i}(): pass\n" for i, d in enumerate(trees)}
+    files["src/app.py"] = "def real_name(): pass\n"
+    cites = " ".join(f"`hidden_name_{i}`" for i in range(len(trees)))
+    _repo(tmp_path, files, {"AGENTS.md": f"Uses `real_name` and {cites}.\n"})
+    expected = sorted(f"hidden_name_{i}" for i in range(len(trees)))
+    assert _missing(instructions_report(tmp_path)[0]) == expected
+
+
+def test_size_caps_hold_at_their_exact_boundaries(tmp_path):
+    at_cap = "`src/at_cap.py` "
+    over_cap = "`src/over_cap.py` "
+    _repo(tmp_path, {"src/app.py": "x = 1\n"}, {
+        "AGENTS.md": at_cap + "x" * (10_000 - len(at_cap)) + "\n"            # 10,000: checked
+                     + over_cap + "x" * (10_001 - len(over_cap)) + "\n",     # 10,001: skipped
+    })
+    _bytes(tmp_path, "src/big.py", _sized(b"def big_def_name(): pass\n", 1_000_000))   # read
+    _bytes(tmp_path, "src/huge.py", _sized(b"def huge_def_name(): pass\n", 1_000_001))  # too large
+    _bytes(tmp_path, "CLAUDE.md", _sized(b"Uses `big_def_name` and `huge_def_name`.\n", 1_000_000))
+    findings, skipped, stats = instructions_report(tmp_path)
+    assert _path_issues(findings) == ["src/at_cap.py"]
+    assert _missing(findings) == ["huge_def_name"]
+    assert stats["files"] == 2 and not any("bytes" in s for s in skipped)
+
+
+def test_a_binary_file_first_in_the_walk_does_not_end_the_name_scan(tmp_path):
+    _bytes(tmp_path, "a.bin", b"\xff\xfe\x00\x01")
+    _repo(tmp_path, {"src/app.py": "def real_name(): pass\n"},
+          {"AGENTS.md": "Uses `real_name` and `lost_name`.\n"})
+    assert _missing(instructions_report(tmp_path)[0]) == ["lost_name"]
+
+
+def test_bad_docs_do_not_stop_the_check_and_each_is_reported(tmp_path):
+    docs = {"a": "docs/a-missing.md", "b": "docs/b-bad.md", "b2": "docs/b-bad2.md",
+            "c": "docs/c-big.md", "c2": "docs/c-big2.md", "d": "docs/d.md", "e": "docs/e.md"}
+    (tmp_path / "adda").mkdir()
+    (tmp_path / "adda" / MAP_FILENAME).write_text(
+        json.dumps({"map": {f"src/{k}.py": v for k, v in docs.items()}, "exempt": []}),
+        encoding="utf-8")
+    for k in docs:
+        _write(tmp_path, f"src/{k}.py", f"def name_{k}(): pass\n")
+    for k in ("b", "b2"):
+        _bytes(tmp_path, docs[k], b"\xff\xfe bad")
+    for k in ("c", "c2"):
+        _bytes(tmp_path, docs[k], _sized(b"x\n", 1_000_001))
+    long = "y" * 10_001
+    _write(tmp_path, docs["d"], f"Uses `lost_name`.\n{long}\n")
+    _write(tmp_path, docs["e"], f"{long}\nUses `name_d`.\n")
+    findings, skipped, stats = refs_report(tmp_path, tmp_path / "adda")
+    assert findings == [{"item": "docs/d.md:1", "issue": "ref missing", "severity": "medium",
+                         "ref": "lost_name"}]
+    assert stats == {"docs": 2, "refs": 2}
+    assert skipped == [
+        "refs-check skipped for 2 doc(s) that could not be read as UTF-8: docs/b-bad.md, docs/b-bad2.md",
+        "refs-check skipped for 2 file(s) over 1,000,000 bytes: docs/c-big.md, docs/c-big2.md",
+        "refs-check skipped 2 line(s) over 10,000 characters in: docs/d.md, docs/e.md",
+    ]
+
+
+def test_with_no_code_the_skip_says_so_exactly(tmp_path):
+    (tmp_path / "adda").mkdir()
+    (tmp_path / "adda" / MAP_FILENAME).write_text(json.dumps({"map": {}, "exempt": []}),
+                                                  encoding="utf-8")
+    assert refs_report(tmp_path, tmp_path / "adda")[1] == [
+        "refs-check skipped: no source files found to check cited names against"]
+    _write(tmp_path, "AGENTS.md", "Uses `some_name`.\n")
+    assert instructions_report(tmp_path)[1] == [
+        "instruction-file name check skipped: no source files found"]
+
+
+def test_bad_instruction_files_do_not_stop_the_check_and_each_is_reported(tmp_path):
+    _repo(tmp_path, {"src/app.py": "def real_name(): pass\n"}, {"REVIEW.md": (
+        "Uses `lost_name` and `real_name`.\n"
+        "See `src/lost.py` and `other/x.py` and `elsewhere/y.py`.\n"
+        "[out](../outside.md) then [lost](lost.md) and [here](./).\n"
+        + "y" * 10_001 + "\n")})
+    for f in ("AGENTS.md", "AGENTS.override.md"):
+        _bytes(tmp_path, f, b"\xff\xfe bad")
+    for f in ("CLAUDE.md", "GEMINI.md"):
+        _bytes(tmp_path, f, _sized(b"x\n", 1_000_001))
+    findings, skipped, stats = instructions_report(tmp_path, extra=("custom.md", "custom2.md"))
+    assert findings == [
+        {"item": "REVIEW.md:1", "issue": "ref missing", "severity": "medium", "ref": "lost_name"},
+        {"item": "REVIEW.md:2", "issue": "path missing", "severity": "medium", "ref": "src/lost.py"},
+        {"item": "REVIEW.md:3", "issue": "link missing", "severity": "medium", "ref": "lost.md"},
+    ]
+    assert stats == {"files": 1, "refs": 2, "paths": 3, "unresolved": 3}
+    assert skipped == [
+        "configured instruction file(s) not found, so not checked: custom.md, custom2.md",
+        "instruction-file check skipped for 2 file(s) that could not be read as UTF-8: "
+        "AGENTS.md, AGENTS.override.md",
+        "instruction-file check skipped for 2 file(s) over 1,000,000 bytes: CLAUDE.md, GEMINI.md",
+        "instruction-file check skipped 1 line(s) over 10,000 characters in: REVIEW.md",
+    ]
+
+
+def test_path_and_link_edge_cases(tmp_path):
+    _repo(tmp_path, {"src/app.py": "x = 1\n", "Xenon notes.md": "x\n", "Xdocs/a.md": "x\n",
+                     "a/src/x.py": "x = 1\n"},
+          {"AGENTS.md": (
+              "[a](<Xenon notes.md>) and [b](Xdocs/a.md).\n"           # names starting with X
+              "Root: `/Xdocs/a.md`.\n"
+              "Run `npm test` and `make` then see `src/lost.py`.\n"    # non-paths before a path
+              "Not a folder: `src/app.py/inner.md`.\n"                 # a file is not a folder
+              "[up](..)\n"),                                           # outside the repo
+           "a/b/AGENTS.md": "Its code is `src/x.py`.\n"})              # found from the package root
+    findings, _, stats = instructions_report(tmp_path)
+    assert _path_issues(findings) == ["src/app.py/inner.md", "src/lost.py"]
+    assert [f["issue"] for f in findings if f["issue"] != "path missing"] == []
+    assert stats["unresolved"] == 1
+
+
+def test_short_and_placeholder_names(tmp_path):
+    _repo(tmp_path, {"src/app.py": "x = 1\n"},
+          {"AGENTS.md": "Call `db()` and `Xy()`; see `qux_client()` for the shape.\n"})
+    assert _missing(instructions_report(tmp_path)[0]) == ["Xy", "db"]
