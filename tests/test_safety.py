@@ -151,11 +151,18 @@ def test_map_entries_outside_the_repository_are_dropped(tmp_path):
 def test_a_path_that_looks_like_an_option_is_not_read_as_one(tmp_path):
     # BUG-ADDA-050 (L1): a doc path reached `git check-ignore` as an option:
     # `[x](--stdin)` waited 10 s for input, and an ignored `-x.md` read as not ignored.
-    from adda.refs import _ignored
+    # Since RF-ADDA-016 paths go to git on stdin, never as arguments.
+    import time
+
+    from adda.refs import instructions_report
 
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     (tmp_path / ".gitignore").write_text("-x.md\n", encoding="utf-8")
-    assert _ignored(tmp_path, "-x.md") is True
+    (tmp_path / "AGENTS.md").write_text("[a](-x.md) and [b](--stdin)\n", encoding="utf-8")
+    start = time.monotonic()
+    findings = instructions_report(tmp_path)[0]
+    assert [f["ref"] for f in findings] == ["--stdin"]
+    assert time.monotonic() - start < 5
 
 
 def test_init_force_refuses_a_scaffold_file_that_is_a_symlink(tmp_path):

@@ -28,14 +28,12 @@ import keyword
 import os
 import posixpath
 import re
-import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from fnmatch import fnmatchcase
 from pathlib import Path
 from urllib.parse import unquote
 
 from adda.modulemap import load_map
-from adda.safety import GIT
 from adda.sync import IGNORE_DIRS, PROSE_SUFFIXES, SOURCE_SUFFIXES, git_ignored
 
 # Broader than source discovery, on purpose. Discovery answers "what needs a
@@ -255,15 +253,51 @@ def _read_doc(path: Path):
     return "\n".join(lines), len(long)
 
 
-def _size_skips(what: str, too_large: list, long_lines: list) -> list[str]:
-    """`skipped` lines for docs and lines too large to check."""
-    out = []
+def _read_docs(repo: Path, rels: list, what: str, noun: str) -> tuple[list, list]:
+    """([(rel, text)] for each doc that can be checked, `skipped` lines for the rest).
+
+    One that cannot be decoded or is too large is named, never passed.
+    """
+    read, unreadable, too_large, long_lines = [], [], [], []
+    for rel in rels:
+        try:
+            text, long = _read_doc(repo / rel)
+        except (OSError, UnicodeDecodeError):
+            unreadable.append(rel)
+            continue
+        if text is None:
+            too_large.append(rel)
+            continue
+        if long:
+            long_lines.append((rel, long))
+        read.append((rel, text))
+    skipped = []
+    if unreadable:
+        skipped.append(f"{what} skipped for {len(unreadable)} {noun}(s) that could not be read "
+                       f"as UTF-8: {', '.join(unreadable)}")
     if too_large:
-        out.append(f"{what} skipped for {len(too_large)} file(s) over "
-                   f"{_DOC_MAX_BYTES:,} bytes: {', '.join(too_large)}")
+        skipped.append(f"{what} skipped for {len(too_large)} file(s) over "
+                       f"{_DOC_MAX_BYTES:,} bytes: {', '.join(too_large)}")
     if long_lines:
-        out.append(f"{what} skipped {sum(n for _, n in long_lines)} line(s) over "
-                   f"{_LINE_MAX:,} characters in: {', '.join(d for d, _ in long_lines)}")
+        skipped.append(f"{what} skipped {sum(n for _, n in long_lines)} line(s) over "
+                       f"{_LINE_MAX:,} characters in: {', '.join(d for d, _ in long_lines)}")
+    return read, skipped
+
+
+def _finding(rel: str, line: int, issue: str, ref: str) -> dict:
+    return {"item": f"{rel}:{line}", "issue": issue, "severity": "medium", "ref": ref}
+
+
+def _name_findings(rel: str, text: str, names, stats: dict) -> list[dict]:
+    """A finding for each code name `text` cites that the code no longer has."""
+    if names is None:
+        return []
+    local = _example_defs(text)
+    out = []
+    for line, name in extract_refs(text):
+        stats["refs"] += 1
+        if name not in names and name not in local:
+            out.append(_finding(rel, line, "ref missing", name))
     return out
 
 
@@ -275,44 +309,16 @@ def refs_report(repo: Path, adda_dir: Path) -> tuple[list[dict], list, dict]:
     told apart from a check that looked at nothing.
     """
     mapping, _ = load_map(adda_dir)
-    findings, skipped, stats = [], [], {"docs": 0, "refs": 0}
-
+    findings, stats = [], {"docs": 0, "refs": 0}
     names = _code_names(repo)
     if names is None:
-        skipped.append("refs-check skipped: no source files found to check cited names against")
-        return findings, skipped, stats
-
-    unreadable, too_large, long_lines = [], [], []
-    for doc in sorted(set(mapping.values())):
-        path = repo / doc
-        if not path.is_file():
-            continue  # a missing doc is audit rule 1's finding, not a second one here
-        try:
-            text, long = _read_doc(path)
-        except (OSError, UnicodeDecodeError):
-            unreadable.append(doc)
-            continue
-        if text is None:
-            too_large.append(doc)
-            continue
-        if long:
-            long_lines.append((doc, long))
+        return findings, ["refs-check skipped: no source files found to check cited names against"], stats
+    # A missing doc is audit rule 1's finding, not a second one here.
+    rels = [doc for doc in sorted(set(mapping.values())) if (repo / doc).is_file()]
+    docs, skipped = _read_docs(repo, rels, "refs-check", "doc")
+    for doc, text in docs:
         stats["docs"] += 1
-        local = _example_defs(text)
-        for line, name in extract_refs(text):
-            stats["refs"] += 1
-            if name not in names and name not in local:
-                findings.append({
-                    "item": f"{doc}:{line}", "issue": "ref missing",
-                    "severity": "medium", "ref": name,
-                })
-
-    if unreadable:
-        skipped.append(
-            f"refs-check skipped for {len(unreadable)} doc(s) that could not be read "
-            f"as UTF-8: {', '.join(unreadable)}"
-        )
-    skipped += _size_skips("refs-check", too_large, long_lines)
+        findings += _name_findings(doc, text, names, stats)
     return findings, skipped, stats
 
 
@@ -508,128 +514,119 @@ def _submodules(repo: Path) -> list[str]:
     return [m.strip().strip("/") + "/" for m in re.findall(r"^\s*path\s*=\s*(.+)$", text, re.M)]
 
 
-def _ignored(repo: Path, rel: str) -> bool:
-    """Is `rel` gitignored? A generated file exists on a working machine and not on
-    a clean checkout, so it is neither present nor missing - just not ours to check."""
-    try:
-        out = subprocess.run(
-            [*GIT, "check-ignore", "-q", "--", rel], cwd=repo, capture_output=True, timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return out.returncode == 0
-
-
-def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:  # noqa: C901 - RF-ADDA-016
-    """Return (findings, skipped, stats) for the instruction files present.
+def _instruction_files(repo: Path, extra) -> tuple[list, list]:
+    """([(file, its directory)] to check, `skipped` lines).
 
     `extra` names files a project configured itself. Unlike a conventional file,
     one that is absent is reported: a typo in the config must not read as
     "checked, all clean".
+    """
+    configured = list(dict.fromkeys(extra))
+    absent = [f for f in configured if not _exists_exact(repo, f)]
+    skipped = ([f"configured instruction file(s) not found, so not checked: {', '.join(absent)}"]
+               if absent else [])
+    present = _discover(repo)
+    seen = {rel for rel, _ in present}
+    present += [(f, "") for f in configured if f not in absent and f not in seen]
+    return present, skipped
+
+
+def _unresolvable(repo: Path, path: str, here: list, submodules: list) -> bool:
+    """Can this rule not decide whether `path` should exist here?"""
+    first = path.split("/")[0]
+    # BUG-ADDA-030: git's own directory is local machine state (an installed
+    # hook), never part of the tree. BUG-ADDA-039: `actions/checkout` is a GitHub
+    # Action, not a path. BUG-ADDA-042: a submodule's files are another repository's.
+    if first == ".git" or _ACTION.match(path) or any(
+            f"{b}/{path}".lstrip("/").startswith(s) for b in here for s in submodules):
+        return True
+    # Checked only when its first segment exists where it may be anchored. Docs
+    # about AI tooling list the conventional instruction files by name,
+    # generically: citing one is not a claim that it exists here - found when
+    # ADDA's own README tripped this rule on its first run.
+    anchored = any(_exists_exact(repo, f"{b}/{first}" if b else first) for b in here)
+    return not anchored or (_generic(path) and not _exists_exact(repo, path))
+
+
+def _cited_paths(repo: Path, home: str, text: str, submodules: list, stats: dict) -> list:
+    """(line, issue, ref, candidates) for each backticked path `text` claims is here."""
+    # Where a cited path may be anchored: the root, and for a nested file its own
+    # directory too - tools differ, and few document it.
+    bases = [""] + ([home] if home else [])
+    # BUG-ADDA-042: once anchored, it may be found from any folder between, since
+    # a sub-project's file cites paths from its package root. Only for finding:
+    # anchoring from those folders too made package import names (`agents/client`)
+    # read as paths, 86 new false findings on round 3.
+    parts = home.split("/") if home else []
+    roots = [""] + ["/".join(parts[:i]) for i in range(len(parts), 0, -1)]
+    out = []
+    for line, path in extract_paths(text):
+        # BUG-ADDA-043: `/api/v1/series` beside `test/fakeintake/api/` is a route.
+        # A leading `/` is the repo root (ADR-0012), never the file's own folder.
+        here, up = ([""], [""]) if path.startswith("/") else (bases, roots)
+        path = path.lstrip("/")
+        if _unresolvable(repo, path, here, submodules):
+            stats["unresolved"] += 1
+            continue
+        stats["paths"] += 1
+        found = [f"{r}/{path}" if r else path for r in up]
+        out.append((line, "path missing", path, [q for p in found for q in _module_forms(p)]))
+    return out
+
+
+def _cited_links(rel: str, text: str, stats: dict) -> list:
+    """(line, issue, ref, candidates) for each markdown link in `text`.
+
+    ENH-ADDA-040: a link names its file exactly, relative to this file, so unlike
+    a backticked path it needs no first-segment guess. A link out of the
+    repository is the one thing it cannot check.
+    """
+    out = []
+    for line, target in extract_links(text):
+        path = _link_path(rel, target)
+        if path is None:
+            stats["unresolved"] += 1
+            continue
+        stats["paths"] += 1
+        if path != ".":
+            out.append((line, "link missing", target, [path]))
+    return out
+
+
+def _path_findings(repo: Path, rel: str, home: str, text: str, submodules: list, stats: dict):
+    """A finding for each path or link `rel` cites that is neither here nor gitignored.
+
+    A gitignored path is generated: it exists on a working machine and not on a
+    clean checkout, so it is not ours to check. Git is asked once per file
+    (RF-ADDA-016), not once per candidate.
+    """
+    cited = _cited_paths(repo, home, text, submodules, stats) + _cited_links(rel, text, stats)
+    absent = [c for c in cited if not any(_exists_exact(repo, q) for q in c[3])]
+    ignored = git_ignored(repo, sorted({q for c in absent for q in c[3]}))
+    return [_finding(rel, line, issue, ref) for line, issue, ref, candidates in absent
+            if ignored.isdisjoint(candidates)]
+
+
+def instructions_report(repo: Path, extra=()) -> tuple[list[dict], list, dict]:
+    """Return (findings, skipped, stats) for the instruction files present.
 
     A path is checked only when its first segment exists in this repo. Anything
     else - another repository, a file relative to some other directory, a slash
     command - is `unresolved`: counted and reported, never flagged, because this
     rule cannot tell those apart and a false alarm costs more than a miss.
     """
-    findings, skipped = [], []
-    stats = {"files": 0, "refs": 0, "paths": 0, "unresolved": 0}
-    configured = list(dict.fromkeys(extra))
-    absent = [f for f in configured if not _exists_exact(repo, f)]
-    if absent:
-        skipped.append(
-            f"configured instruction file(s) not found, so not checked: {', '.join(absent)}"
-        )
-    present = _discover(repo)
-    seen = {rel for rel, _ in present}
-    present += [(f, "") for f in configured if f not in absent and f not in seen]
+    present, skipped = _instruction_files(repo, extra)
+    findings, stats = [], {"files": 0, "refs": 0, "paths": 0, "unresolved": 0}
     if not present:
         return findings, skipped, stats
-
     names = _code_names(repo)
     if names is None:
         skipped.append("instruction-file name check skipped: no source files found")
     submodules = _submodules(repo)
-    unreadable, too_large, long_lines = [], [], []
-    for rel, home in present:
-        # Where a cited path may be anchored: the root, and for a nested file
-        # its own directory too - tools differ, and few document it.
-        bases = [""] + ([home] if home else [])
-        # BUG-ADDA-042: once anchored, it may be found from any folder between,
-        # since a sub-project's file cites paths from its package root. Only for
-        # finding: anchoring from those folders too made package import names
-        # (`agents/client`) read as paths, 86 new false findings on round 3.
-        parts = home.split("/") if home else []
-        roots = [""] + ["/".join(parts[:i]) for i in range(len(parts), 0, -1)]
-        try:
-            text, long = _read_doc(repo / rel)
-        except (OSError, UnicodeDecodeError):
-            unreadable.append(rel)
-            continue
-        if text is None:
-            too_large.append(rel)
-            continue
-        if long:
-            long_lines.append((rel, long))
+    homes = dict(present)
+    docs, unread = _read_docs(repo, [rel for rel, _ in present], "instruction-file check", "file")
+    for rel, text in docs:
         stats["files"] += 1
-        if names is not None:
-            local = _example_defs(text)
-            for line, name in extract_refs(text):
-                stats["refs"] += 1
-                if name not in names and name not in local:
-                    findings.append({
-                        "item": f"{rel}:{line}", "issue": "ref missing",
-                        "severity": "medium", "ref": name,
-                    })
-        for line, path in extract_paths(text):
-            # BUG-ADDA-043: `/api/v1/series` beside `test/fakeintake/api/` is a route.
-            # A leading `/` is the repo root (ADR-0012), never the file's own folder.
-            here, up = ([""], [""]) if path.startswith("/") else (bases, roots)
-            path = path.lstrip("/")
-            # Docs about AI tooling list the conventional instruction files by
-            # name, generically. Citing one is not a claim that it exists here -
-            # found when ADDA's own README tripped this rule on its first run.
-            first = path.split("/")[0]
-            if first == ".git" or _ACTION.match(path) or any(
-                    f"{b}/{path}".lstrip("/").startswith(s) for b in here for s in submodules):
-                # BUG-ADDA-030: git's own directory is local machine state (an
-                # installed hook), never part of the tree. It cannot be decided.
-                # BUG-ADDA-039: `actions/checkout` is a GitHub Action, not a path.
-                # BUG-ADDA-042: a submodule's files are another repository's.
-                stats["unresolved"] += 1
-                continue
-            anchored = [f"{b}/{path}" if b else path for b in here
-                        if _exists_exact(repo, f"{b}/{first}" if b else first)]
-            if not anchored or (_generic(path) and not _exists_exact(repo, path)):
-                stats["unresolved"] += 1
-                continue
-            stats["paths"] += 1
-            found = [f"{r}/{path}" if r else path for r in up]
-            if not any(_exists_exact(repo, q) or _ignored(repo, q)
-                       for p in found for q in _module_forms(p)):
-                findings.append({
-                    "item": f"{rel}:{line}", "issue": "path missing",
-                    "severity": "medium", "ref": path,
-                })
-        # ENH-ADDA-040: a markdown link names its file exactly, relative to this
-        # file, so unlike a backticked path it needs no first-segment guess.
-        # A link out of the repository is the one thing it cannot check.
-        for line, target in extract_links(text):
-            path = _link_path(rel, target)
-            if path is None:
-                stats["unresolved"] += 1
-                continue
-            stats["paths"] += 1
-            if path != "." and not (_exists_exact(repo, path) or _ignored(repo, path)):
-                findings.append({
-                    "item": f"{rel}:{line}", "issue": "link missing",
-                    "severity": "medium", "ref": target,
-                })
-
-    if unreadable:
-        skipped.append(
-            f"instruction-file check skipped for {len(unreadable)} file(s) that could "
-            f"not be read as UTF-8: {', '.join(unreadable)}"
-        )
-    skipped += _size_skips("instruction-file check", too_large, long_lines)
-    return findings, skipped, stats
+        findings += _name_findings(rel, text, names, stats)
+        findings += _path_findings(repo, rel, homes[rel], text, submodules, stats)
+    return findings, skipped + unread, stats

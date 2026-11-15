@@ -3,7 +3,7 @@
 
 # `restated` - `src/adda/restated.py`
 
-Last verified: 2026-11-15
+Last verified: 2026-11-16
 
 **Purpose** - After a commit corrects a fact, list the other files that still state the old version word for word (ADR-0017). Advisory and run on purpose: `adda restated [path] --rev <commit>`.
 
@@ -29,6 +29,7 @@ CLI: `adda restated [path] [--rev REV] [--also DIR]... [--json]` - exit 1 only w
 
 ## Change Log (newest first)
 
+- [2026-11-16] RF-ADDA-016 - `restated_report` (complexity 45) split into `_texts`, `_written`, `_gone`, `_spans` and `_sorted_hits`; each target is split into phrases once instead of once per changed file. Output identical over this repo's last 150 commits (14 hits) · it grew a branch per fix; ENH-ADDA-062's tests (91% of mutants caught) guarded the split.
 - [2026-11-15] ENH-ADDA-063 - `restated_report` carries `noqa: C901 - RF-ADDA-016`; code unchanged · ruff now gates complexity at 15 and this function is at 24 (ADR-0032).
 - [2026-11-14] BUG-ADDA-047 — git calls start with `safety.GIT` (`-c core.fsmonitor=false -c safe.bareRepository=explicit`); the patch diff adds `--no-ext-diff --no-textconv` · a repository's own git config can name a program for git to run; a clone never carries config, an archive with a git directory does. Test: a planted `core.fsmonitor` runs under plain `git diff --cached` and not under ADDA's calls.
 - [2026-09-24] ENH-ADDA-031 - the search runs over HEAD, not the tree at `--rev` · dogfooding on an older commit kept reporting a paragraph already fixed after it; "still stated" has to mean now. Test-first.

@@ -3,7 +3,7 @@
 
 # `refs` - `src/adda/refs.py`
 
-Last verified: 2026-11-15
+Last verified: 2026-11-16
 
 **Purpose** - The deterministic slice of the gap ancestry cannot see (ADR-0010, ADR-0011). `audit` decides staleness by commit ancestry, so a doc committed alongside its code reads as current even when it names a function deleted in that same commit. `refs` checks that every code name a mapped doc cites still appears somewhere in the source. Opt-in, via `adda audit --refs`.
 
@@ -44,6 +44,7 @@ Findings are `{"item": "file:line", "issue": "ref missing" | "path missing" | "l
 
 ## Change Log (newest first)
 
+- [2026-11-16] RF-ADDA-016 - `instructions_report` (complexity 47) and `refs_report` split into `_instruction_files`, `_read_docs`, `_name_findings`, `_cited_paths`, `_unresolvable`, `_cited_links` and `_path_findings`; `_ignored` (one `git check-ignore` per candidate) replaced by `sync.git_ignored`, one call per file, paths on stdin. Same findings, messages and stats: 304 tests, and `audit --refs` on this repo unchanged · the two functions grew a branch per fix and repeated the read-and-skip loop; a one-line doc took 62 git processes (5.4 s in a test, now 0.5 s).
 - [2026-11-15] ENH-ADDA-063 - `instructions_report` carries `noqa: C901 - RF-ADDA-016`; code unchanged · ruff now gates complexity at 15 and this function is at 19 (ADR-0032).
 - [2026-11-15] BUG-ADDA-050 (L2) — a doc over 1 MB and any line over 10,000 characters are skipped and listed in `skipped`; a long line is blanked so line numbers hold · span matching is quadratic in line length (48 KB: 5 s), and every repository's README is read (ADR-0031).
 - [2026-11-14] BUG-ADDA-050 (L1) — `_ignored` passes `--` before the path · a doc link such as `[x](--stdin)` reached `git check-ignore` as an option (a 10 s wait each), and an ignored file named `-x.md` read as not ignored.

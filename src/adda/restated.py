@@ -150,17 +150,8 @@ def _touching(phrases, lines):
             yield phrase, first
 
 
-def restated_report(repo: Path, rev: str = "HEAD", also=()) -> tuple[list, list, list]:  # noqa: C901 - RF-ADDA-016
-    """Return (current, records, skipped).
-
-    Hits are {file, line, source, words, text}. `records` holds hits on dated
-    lines, closed rows and superseded files - history, shown apart so it is not
-    mistaken for work. `also` adds untracked directories, such as agent memory.
-    """
-    if not _git(repo, "rev-list", "--parents", "-n", "1", rev).split()[1:]:
-        return [], [], [f"{rev} has no parent commit, so there is nothing it removed to compare"]
-    changes = {p: c for p, c in _changes(repo, rev).items()
-               if p.lower().endswith(_PROSE) or c["new_path"].lower().endswith(_PROSE)}
+def _texts(repo: Path, changes: dict, also) -> tuple[dict, dict]:
+    """(sha -> text for every blob needed, path -> text of every file to search)."""
     tree = {}
     # Searched as the repo is NOW: "still stated" means today, so a copy fixed
     # after the correction is not reported. Right after a correction rev is HEAD.
@@ -175,47 +166,53 @@ def restated_report(repo: Path, rev: str = "HEAD", also=()) -> tuple[list, list,
         for f in sorted(Path(d).rglob("*.md")):
             targets[f"{Path(d).as_posix()}/{f.relative_to(d).as_posix()}"] = (
                 f.read_text(encoding="utf-8", errors="replace"))
+    return texts, targets
 
-    # Phrases this commit wrote somewhere they were not before: a removed phrase
-    # that reappears there was moved, not retracted.
+
+def _written(changes: dict, texts: dict) -> set:
+    """Phrases this commit wrote somewhere they were not before: a removed phrase
+    that reappears there was moved, not retracted."""
     written = set()
     for c in changes.values():
         new, old = texts.get(c["new"]) or "", texts.get(c["old"]) or ""
         if new and c["added"]:
             had = {p for p, _, _ in _phrases(_tokens(old))}
             written |= {p for p, _ in _touching(_phrases(_tokens(new)), c["added"])} - had
+    return written
 
-    hits = []
-    for src, c in changes.items():
-        old = texts.get(c["old"])
-        if old is None or not c["removed"]:
-            continue
-        kept = {p for p, _, _ in _phrases(_tokens(texts.get(c["new"]) or ""))}
-        gone = {}
-        for phrase, line in _touching(_phrases(_tokens(old)), c["removed"]):
-            if phrase not in kept and phrase not in written:
-                gone.setdefault(phrase, line)
-        if not gone:
-            continue
-        for path, text in targets.items():
-            if path in (src, c["new_path"]):
-                continue
-            span = None
-            for i, (phrase, first, _) in enumerate(_phrases(_tokens(text))):
-                if phrase not in gone:
-                    continue
-                if span and span["i"] == i - 1:
-                    span["i"], span["words"] = i, span["words"] + [phrase[-1]]
-                else:
-                    if span:
-                        hits.append(span)
-                    span = {"file": path, "line": first, "source": f"{src}:{gone[phrase]}",
-                            "i": i, "words": list(phrase)}
-            if span:
-                hits.append(span)
 
+def _gone(c: dict, texts: dict, written: set) -> dict:
+    """{phrase: old line} for each phrase the change removed and did not keep or move."""
+    old = texts.get(c["old"])
+    if old is None or not c["removed"]:
+        return {}
+    kept = {p for p, _, _ in _phrases(_tokens(texts.get(c["new"]) or ""))}
+    gone = {}
+    for phrase, line in _touching(_phrases(_tokens(old)), c["removed"]):
+        if phrase not in kept and phrase not in written:
+            gone.setdefault(phrase, line)
+    return gone
+
+
+def _spans(path: str, phrases: list, gone: dict, src: str) -> list:
+    """One span per run of consecutive phrases in `gone`: a 9-word copy is one hit."""
+    spans, span = [], None
+    for i, (phrase, first, _) in enumerate(phrases):
+        if phrase not in gone:
+            continue
+        if span and span["i"] == i - 1:
+            span["i"], span["words"] = i, span["words"] + [phrase[-1]]
+            continue
+        if span:
+            spans.append(span)
+        span = {"file": path, "line": first, "source": f"{src}:{gone[phrase]}", "i": i, "words": list(phrase)}
+    return spans + ([span] if span else [])
+
+
+def _sorted_hits(spans: list, targets: dict) -> tuple[list, list]:
+    """(current, records): the longest span per line, with dated lines apart."""
     best = {}
-    for h in hits:
+    for h in spans:
         key = (h["file"], h["line"])
         if key not in best or len(h["words"]) > len(best[key]["words"]):
             best[key] = h
@@ -226,4 +223,26 @@ def restated_report(repo: Path, rev: str = "HEAD", also=()) -> tuple[list, list,
         lines = targets[path].splitlines()
         dated = _DATED.search(lines[line - 1]) or _SUPERSEDED.search("\n".join(lines[:10]))
         (records if dated else current).append(hit)
-    return current, records, []
+    return current, records
+
+
+def restated_report(repo: Path, rev: str = "HEAD", also=()) -> tuple[list, list, list]:
+    """Return (current, records, skipped).
+
+    Hits are {file, line, source, words, text}. `records` holds hits on dated
+    lines, closed rows and superseded files - history, shown apart so it is not
+    mistaken for work. `also` adds untracked directories, such as agent memory.
+    """
+    if not _git(repo, "rev-list", "--parents", "-n", "1", rev).split()[1:]:
+        return [], [], [f"{rev} has no parent commit, so there is nothing it removed to compare"]
+    changes = {p: c for p, c in _changes(repo, rev).items()
+               if p.lower().endswith(_PROSE) or c["new_path"].lower().endswith(_PROSE)}
+    texts, targets = _texts(repo, changes, also)
+    written = _written(changes, texts)
+    gones = {src: g for src, c in changes.items() if (g := _gone(c, texts, written))}
+    # Each target is split into phrases once, not once per changed file (RF-ADDA-016).
+    phrases = {path: list(_phrases(_tokens(text))) for path, text in targets.items()} if gones else {}
+    spans = [s for src, gone in gones.items() for path in targets
+             if path not in (src, changes[src]["new_path"])
+             for s in _spans(path, phrases[path], gone, src)]
+    return (*_sorted_hits(spans, targets), [])
