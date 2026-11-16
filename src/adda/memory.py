@@ -58,58 +58,50 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().rstrip(".").lower()
 
 
-def memory_report(directory: Path, index: str = "MEMORY.md") -> tuple[list[dict], list, dict]:  # noqa: C901 - RF-ADDA-016
-    """Return (findings, skipped, stats). Findings are {item, issue, severity[, ref]}."""
-    findings, skipped = [], []
-    notes = sorted(
-        p.relative_to(directory).as_posix() for p in directory.rglob("*.md")
-        if p.relative_to(directory).as_posix() != index
-    )
-    texts = {rel: (directory / rel).read_text(encoding="utf-8", errors="replace") for rel in notes}
-    meta = {rel: _frontmatter(texts[rel]) for rel in notes}
-    stats = {"files": len(notes), "entries": 0, "links": 0}
-
-    # --- the index: every note listed, exactly once, pointing at something real
-    index_path = directory / index
-    if index_path.is_file():
-        index_text = index_path.read_text(encoding="utf-8", errors="replace")
-        texts[index] = index_text
-        seen = {}
-        for _, line in _live(index_text):
-            for target in _MD_LINK.findall(line):
-                if "://" in target or target.startswith("mailto:"):
-                    continue
-                rel = target.split("#", 1)[0].replace("\\", "/")
-                rel = rel[2:] if rel.startswith("./") else rel
-                if not rel.endswith(".md"):
-                    continue
-                stats["entries"] += 1
+def _index_entries(index_text: str) -> tuple[dict, int]:
+    """({note: times listed}, entries) for the note links in the index."""
+    seen, entries = {}, 0
+    for _, line in _live(index_text):
+        for target in _MD_LINK.findall(line):
+            if "://" in target or target.startswith("mailto:"):
+                continue
+            rel = target.split("#", 1)[0].replace("\\", "/")
+            rel = rel[2:] if rel.startswith("./") else rel
+            if rel.endswith(".md"):
+                entries += 1
                 seen[rel] = seen.get(rel, 0) + 1
-        for rel, count in sorted(seen.items()):
-            if rel not in notes:
-                findings.append({"item": rel, "issue": "index entry dangling", "severity": "high"})
-            elif count > 1:
-                findings.append({"item": rel, "issue": "indexed twice", "severity": "medium"})
-        for rel in notes:
-            if rel not in seen:
-                findings.append({"item": rel, "issue": "not indexed", "severity": "high"})
-    else:
-        skipped.append(f"no {index} in {directory}: cannot check which notes the agent can see")
+    return seen, entries
 
-    # --- [[links]] resolve by frontmatter name or by filename
-    known = {Path(rel).stem for rel in notes} | {m["name"] for m in meta.values() if m.get("name")}
+
+def _index_findings(notes: list, seen: dict) -> list[dict]:
+    """Every note listed, exactly once, pointing at something real."""
+    findings = []
+    for rel, count in sorted(seen.items()):
+        if rel not in notes:
+            findings.append({"item": rel, "issue": "index entry dangling", "severity": "high"})
+        elif count > 1:
+            findings.append({"item": rel, "issue": "indexed twice", "severity": "medium"})
+    return findings + [{"item": rel, "issue": "not indexed", "severity": "high"}
+                       for rel in notes if rel not in seen]
+
+
+def _link_findings(texts: dict, known: set, stats: dict) -> list[dict]:
+    """A finding for each `[[link]]` that resolves neither by name nor by filename."""
+    findings = []
     for rel in sorted(texts):
         for number, line in _live(texts[rel]):
             for target in _WIKI.findall(line):
                 stats["links"] += 1
                 name = target.strip()
                 if name not in known and Path(name).stem not in known:
-                    findings.append({
-                        "item": f"{rel}:{number}", "issue": "link dangling",
-                        "severity": "medium", "ref": name,
-                    })
+                    findings.append({"item": f"{rel}:{number}", "issue": "link dangling",
+                                     "severity": "medium", "ref": name})
+    return findings
 
-    # --- one fact, one note
+
+def _duplicate_findings(notes: list, meta: dict) -> list[dict]:
+    """One fact, one note: no two notes share a name or a description."""
+    findings = []
     for field, issue, severity in (("name", "duplicate name", "high"),
                                    ("description", "duplicate description", "medium")):
         groups = {}
@@ -117,8 +109,28 @@ def memory_report(directory: Path, index: str = "MEMORY.md") -> tuple[list[dict]
             value = meta[rel].get(field)
             if value:
                 groups.setdefault(_norm(value), []).append(rel)
-        for rels in groups.values():
-            if len(rels) > 1:
-                findings.append({"item": ", ".join(sorted(rels)), "issue": issue, "severity": severity})
+        findings += [{"item": ", ".join(sorted(rels)), "issue": issue, "severity": severity}
+                     for rels in groups.values() if len(rels) > 1]
+    return findings
 
-    return findings, skipped, stats
+
+def memory_report(directory: Path, index: str = "MEMORY.md") -> tuple[list[dict], list, dict]:
+    """Return (findings, skipped, stats). Findings are {item, issue, severity[, ref]}."""
+    notes = sorted(
+        p.relative_to(directory).as_posix() for p in directory.rglob("*.md")
+        if p.relative_to(directory).as_posix() != index
+    )
+    texts = {rel: (directory / rel).read_text(encoding="utf-8", errors="replace") for rel in notes}
+    meta = {rel: _frontmatter(texts[rel]) for rel in notes}
+    stats = {"files": len(notes), "entries": 0, "links": 0}
+    findings, skipped = [], []
+    index_path = directory / index
+    if index_path.is_file():
+        texts[index] = index_path.read_text(encoding="utf-8", errors="replace")
+        seen, stats["entries"] = _index_entries(texts[index])
+        findings += _index_findings(notes, seen)
+    else:
+        skipped.append(f"no {index} in {directory}: cannot check which notes the agent can see")
+    known = {Path(rel).stem for rel in notes} | {m["name"] for m in meta.values() if m.get("name")}
+    findings += _link_findings(texts, known, stats)
+    return findings + _duplicate_findings(notes, meta), skipped, stats

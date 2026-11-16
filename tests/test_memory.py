@@ -137,3 +137,74 @@ def test_missing_directory_fails_clearly(tmp_path):
     res = runner.invoke(app, ["memory", str(tmp_path / "nope")])
     assert res.exit_code == 1
     assert "not a directory" in res.stdout.lower()
+
+
+# --- ENH-ADDA-062: what mutation testing found untested -------------------------
+# 32 of 135 changes to memory.py passed every test: no test read a finding's
+# severity, the index's link forms (`./`, `#anchor`, `\`, mailto) were untested,
+# and one skipped link or fence could end the scan of everything after it.
+
+
+def test_every_finding_carries_its_severity(tmp_path):
+    _note(tmp_path, "a", name="same", description="Same words", body="[[lost]] and [[b]]\n")
+    _note(tmp_path, "b", name="same", description="same words.")
+    _note(tmp_path, "c", description="three")
+    _index(tmp_path, "a", "a", "b", "gone")
+    findings, _, stats = memory_report(tmp_path)
+    assert findings == [
+        {"item": "a.md", "issue": "indexed twice", "severity": "medium"},
+        {"item": "gone.md", "issue": "index entry dangling", "severity": "high"},
+        {"item": "c.md", "issue": "not indexed", "severity": "high"},
+        {"item": "a.md:6", "issue": "link dangling", "severity": "medium", "ref": "lost"},
+        {"item": "a.md, b.md", "issue": "duplicate name", "severity": "high"},
+        {"item": "a.md, b.md", "issue": "duplicate description", "severity": "medium"},
+    ]
+    assert stats == {"files": 3, "entries": 4, "links": 2}
+
+
+def test_index_link_forms_and_what_comes_after_a_skipped_one(tmp_path):
+    for stem in ("a", "b", "c", "d"):
+        _note(tmp_path, stem, description=stem)
+    (tmp_path / "sub").mkdir()
+    _note(tmp_path / "sub", "e", description="e")
+    (tmp_path / "MEMORY.md").write_text(
+        "- [a](./a.md#section)\n"                                    # ./ and an anchor
+        "- [e](sub\\e.md)\n"                                         # a Windows separator
+        "- [mail](mailto:someone@example.md) then [b](b.md)\n"       # mailto is not a note
+        "- [site](https://example.com/x.md) then [c](c.md)\n"        # a URL is not a note
+        "- [text](notes.txt) then [d](d.md)\n",                      # nor is a non-.md file
+        encoding="utf-8")
+    findings, skipped, stats = memory_report(tmp_path)
+    assert findings == [] and skipped == [] and stats["entries"] == 5
+
+
+def test_entries_after_a_fenced_example_still_count(tmp_path):
+    _note(tmp_path, "a")
+    _note(tmp_path, "b", description="two")
+    (tmp_path / "MEMORY.md").write_text(
+        "- [a](a.md)\n\n```\n- [example](example.md)\n```\n\n- [b](b.md)\n", encoding="utf-8")
+    assert memory_report(tmp_path)[0] == []
+
+
+def test_frontmatter_is_only_the_leading_block(tmp_path):
+    # A body line shaped like a field is not frontmatter: not after the closing
+    # `---`, and not in a note that has no frontmatter at all.
+    _note(tmp_path, "a", name="a", body="name: b\n")
+    _note(tmp_path, "b", description="two")
+    (tmp_path / "c.md").write_text("name: b\ndescription: two\n", encoding="utf-8")
+    (tmp_path / "x.md").write_text("---\nname: 'Xmas'\ndescription: x\n---\n\n[[Xmas]]\n",
+                                   encoding="utf-8")
+    _index(tmp_path, "a", "b", "c", "x")
+    assert memory_report(tmp_path)[0] == []
+
+
+def test_a_link_written_with_its_extension_resolves_by_filename(tmp_path):
+    _note(tmp_path, "a", body="[[a.md]]\n")
+    _index(tmp_path, "a")
+    assert memory_report(tmp_path)[0] == []
+
+
+def test_no_index_says_so_exactly(tmp_path):
+    _note(tmp_path, "a")
+    assert memory_report(tmp_path)[1] == [
+        f"no MEMORY.md in {tmp_path}: cannot check which notes the agent can see"]
